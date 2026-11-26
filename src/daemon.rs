@@ -10,8 +10,8 @@ use crate::timeline::{TimedSample, Timeline};
 const fn command(label: Label) -> Option<&'static [&'static str]> {
     match label {
         Label::Overview => Some(&["niri", "msg", "action", "toggle-overview"]),
-        Label::Left => Some(&["niri", "msg", "action", "focus-column-left"]),
-        Label::Right => Some(&["niri", "msg", "action", "focus-column-right"]),
+        Label::Left => Some(&["niri", "msg", "action", "focus-column-right"]),
+        Label::Right => Some(&["niri", "msg", "action", "focus-column-left"]),
         Label::WorkspaceUp => Some(&["niri", "msg", "action", "focus-workspace-up"]),
         Label::WorkspaceDown => Some(&["niri", "msg", "action", "focus-workspace-down"]),
         Label::ReverseTwist => Some(&["ydotool", "mousemove", "--wheel", "--", "0", "-5"]),

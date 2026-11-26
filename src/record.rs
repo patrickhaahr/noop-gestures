@@ -7,7 +7,7 @@ use tokio::sync::watch;
 use crate::dataset::{Dataset, Label, Take};
 use crate::optical::OpticalSample;
 use crate::session::{self, Event, log};
-use crate::timeline::{SAMPLE_PERIOD_MS, Stamped, TimedSample, Timeline};
+use crate::timeline::{Stamped, TimedSample, Timeline};
 
 #[derive(Default)]
 struct Recording {
@@ -70,10 +70,12 @@ pub async fn idle(dataset: &Dataset, duration: Duration) -> Result<()> {
     session.await?;
 
     let r = std::mem::take(&mut *lock(&recording));
-    let Some(start_ms) = r.motion.first().map(|s| s.t) else {
+    let (Some(start_ms), Some(end_ms)) =
+        (r.motion.first().map(|s| s.t), r.motion.last().map(|s| s.t))
+    else {
         anyhow::bail!("no motion data arrived; nothing saved");
     };
-    let seconds = u64::try_from(r.motion.len()).unwrap_or(0) * SAMPLE_PERIOD_MS / 1_000;
+    let seconds = (end_ms - start_ms) / 1_000;
     ensure!(
         seconds >= 30,
         "only {seconds} s of motion arrived; nothing saved"

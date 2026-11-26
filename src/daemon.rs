@@ -1,21 +1,32 @@
+use std::time::{Duration, Instant};
+
 use anyhow::{Result, ensure};
 use tokio::sync::watch;
 
 use crate::dataset::{Dataset, Label};
-use crate::detector::{Detection, Detector};
-use crate::recognizer::Recognizer;
+use crate::detector::{Detection, Detector, Evidence};
+use crate::niri::Niri;
+use crate::recognizer::{POST_SAMPLES, Recognizer};
 use crate::session::{self, Event, log};
 use crate::timeline::{TimedSample, Timeline};
 
-const fn command(label: Label) -> Option<&'static [&'static str]> {
+enum Action {
+    Process(&'static str, &'static [&'static str]),
+    Niri(&'static str),
+}
+
+const fn action(label: Label) -> Option<Action> {
     match label {
-        Label::Twist => Some(&["ydotool", "mousemove", "--wheel", "--", "0", "-5"]),
-        Label::ReverseTwist => Some(&["niri", "msg", "action", "toggle-overview"]),
-        Label::Left => Some(&["niri", "msg", "action", "focus-column-left"]),
-        Label::Right => Some(&["niri", "msg", "action", "focus-column-right"]),
-        Label::Up => Some(&["niri", "msg", "action", "focus-workspace-up"]),
-        Label::Down => Some(&["niri", "msg", "action", "focus-workspace-down"]),
-        Label::Knock => Some(&["openhome", "ir", "edifier", "mute"]),
+        Label::Twist => Some(Action::Process(
+            "ydotool",
+            &["mousemove", "--wheel", "--", "0", "-5"],
+        )),
+        Label::ReverseTwist => Some(Action::Niri("ToggleOverview")),
+        Label::Left => Some(Action::Niri("FocusColumnLeft")),
+        Label::Right => Some(Action::Niri("FocusColumnRight")),
+        Label::Up => Some(Action::Niri("FocusWorkspaceUp")),
+        Label::Down => Some(Action::Niri("FocusWorkspaceDown")),
+        Label::Knock => Some(Action::Process("openhome", &["ir", "edifier", "mute"])),
         Label::Idle => None,
     }
 }
@@ -34,6 +45,7 @@ pub async fn run(dataset: &Dataset) -> Result<()> {
         dataset.path().display()
     ));
 
+    let niri = Niri::connect_lazily();
     let emit = move |event| match event {
         Event::Status(status) => log(&format!("strap {status:?}")),
         Event::Batch {
@@ -41,8 +53,11 @@ pub async fn run(dataset: &Dataset) -> Result<()> {
             arrived_ms,
         } => {
             let stamped = timeline.push(&samples, arrived_ms);
-            for detection in detector.push(&stamped) {
-                fire(detection);
+            let scan_started = Instant::now();
+            let detections = detector.push(&stamped);
+            let scan = scan_started.elapsed();
+            for detection in detections {
+                fire(detection, arrived_ms, scan, &niri);
             }
         }
         Event::Optical { .. } => {}
@@ -55,16 +70,37 @@ pub async fn run(dataset: &Dataset) -> Result<()> {
     Ok(())
 }
 
-fn fire(detection: Detection) {
-    let Some(argv @ &[program, ref args @ ..]) = command(detection.label) else {
+fn fire(detection: Detection, arrived_ms: u64, scan: Duration, niri: &Niri) {
+    let Some(action) = action(detection.label) else {
         return;
     };
-    let shown = argv.join(" ");
+    let shown = match action {
+        Action::Process(program, args) => format!("{program} {}", args.join(" ")),
+        Action::Niri(name) => format!("niri {name}"),
+    };
+    let evidence = match detection.evidence {
+        Evidence::FullWindow => "on the full window".to_owned(),
+        Evidence::Prefix { samples_past_peak } => {
+            format!("early on {samples_past_peak} of {POST_SAMPLES} samples past the peak")
+        }
+        Evidence::RisingEdge => "early on the rising edge before the peak".to_owned(),
+    };
     log(&format!(
-        "{:?} -> {shown} ({} ms after the peak)",
+        "{:?} -> {shown}, {evidence}: its batch arrived {} ms after the peak, which was sample {} of its batch; {} later batches waited for; detector took {} us",
         detection.label,
-        session::now_ms().saturating_sub(detection.t)
+        arrived_ms.saturating_sub(detection.t),
+        detection.index_in_batch,
+        detection.batches_waited,
+        scan.as_micros()
     ));
+    match action {
+        Action::Niri(name) => niri.dispatch(name),
+        Action::Process(program, args) => spawn(program, args, shown),
+    }
+}
+
+fn spawn(program: &str, args: &[&str], shown: String) {
+    let spawned = Instant::now();
     let mut process = tokio::process::Command::new(program);
     process.args(args);
     if std::env::var_os("YDOTOOL_SOCKET").is_none()
@@ -76,9 +112,11 @@ fn fire(detection: Detection) {
         );
     }
     tokio::spawn(async move {
-        match process.status().await {
-            Ok(status) if status.success() => {}
-            Ok(status) => log(&format!("{shown} exited with {status}")),
+        let outcome = process.status().await;
+        let ran_ms = spawned.elapsed().as_millis();
+        match outcome {
+            Ok(status) if status.success() => log(&format!("{shown} exited after {ran_ms} ms")),
+            Ok(status) => log(&format!("{shown} exited with {status} after {ran_ms} ms")),
             Err(e) => log(&format!("could not run {shown}: {e}")),
         }
     });

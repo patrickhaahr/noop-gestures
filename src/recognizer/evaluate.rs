@@ -4,7 +4,7 @@ use std::fmt;
 use super::{Recognizer, monotonic, segments};
 use crate::dataset::{Label, Take};
 use crate::detector::Detector;
-use crate::timeline::SAMPLE_PERIOD_MS;
+use crate::timeline::NOMINAL_SAMPLE_PERIOD_US;
 
 const LONG_IDLE_SAMPLES: usize = 6_000;
 const BATCH_SAMPLES: usize = 100;
@@ -32,7 +32,8 @@ pub fn replay_long_idle(takes: &[Take]) -> Vec<Replay> {
                 *fired.entry(detection.label).or_default() += 1;
             }
             Replay {
-                seconds: u64::try_from(samples.len()).unwrap_or(0) * SAMPLE_PERIOD_MS / 1_000,
+                seconds: u64::try_from(samples.len()).unwrap_or(0) * NOMINAL_SAMPLE_PERIOD_US
+                    / 1_000_000,
                 fired,
             }
         })
@@ -98,7 +99,7 @@ pub fn leave_one_take_out(takes: &[Take]) -> Confusion {
     let mut confusion = Confusion::default();
     for (index, take) in takes.iter().enumerate() {
         for features in segments(take) {
-            if let Some(predicted) = recognizer.nearest(&features, Some(index)) {
+            if let Some((_, predicted)) = recognizer.nearest(&features, Some(index)) {
                 *confusion.0.entry((take.label, predicted)).or_default() += 1;
             }
         }

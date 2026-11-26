@@ -8,6 +8,11 @@ pub enum Command {
     GetBatteryLevel,
     RealtimeRawStream { on: bool },
     ImuDataStream { on: bool },
+    GetImuDataStream,
+    GetR12RealtimeStream,
+    GetPacketConfig,
+    StartFeatureFlagNames,
+    NextFeatureFlagName,
 }
 
 impl Command {
@@ -18,6 +23,11 @@ impl Command {
             Self::RealtimeRawStream { on: false } => (63, &[0]),
             Self::ImuDataStream { on: true } => (106, &[1, 1]),
             Self::ImuDataStream { on: false } => (106, &[1, 0]),
+            Self::GetImuDataStream => (107, &[1]),
+            Self::GetR12RealtimeStream => (130, &[1]),
+            Self::GetPacketConfig => (65, &[1]),
+            Self::StartFeatureFlagNames => (117, &[1]),
+            Self::NextFeatureFlagName => (118, &[1]),
         }
     }
 

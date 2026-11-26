@@ -1,9 +1,11 @@
+mod benchmark;
 mod calibrator;
 mod daemon;
 mod dataset;
 mod detector;
 mod frame;
 mod imu;
+mod niri;
 mod optical;
 mod probe;
 mod recognizer;
@@ -35,6 +37,11 @@ enum Cmd {
         seconds: u64,
         #[arg(long, help = "Also send SET_IMU_DATA_STREAM (command 106)")]
         imu_stream: bool,
+        #[arg(
+            long,
+            help = "Also send the read-only gets 107, 130, 65 and the feature-flag name walk 117/118"
+        )]
+        queries: bool,
     },
     #[command(about = "Serve the gesture calibrator on 127.0.0.1 and record labelled takes")]
     Calibrate {
@@ -53,6 +60,13 @@ enum Cmd {
         #[arg(long, default_value_t = 8)]
         minutes: u64,
         #[arg(long, help = "JSONL file the take is appended to")]
+        dataset: Option<PathBuf>,
+    },
+    #[command(
+        about = "Replay every take through the live detector in strap-sized batches and report accuracy and latency"
+    )]
+    Benchmark {
+        #[arg(long, help = "JSONL file of recorded takes")]
         dataset: Option<PathBuf>,
     },
     #[command(about = "Score the recognizer on the recorded takes, holding out one take at a time")]
@@ -76,7 +90,8 @@ async fn main() -> Result<()> {
         Cmd::Probe {
             seconds,
             imu_stream,
-        } => probe::run(seconds, imu_stream).await,
+            queries,
+        } => probe::run(seconds, imu_stream, queries).await,
         Cmd::Calibrate { port, dataset } => {
             let path = dataset.map_or_else(default_dataset, Ok)?;
             calibrator::run(port, Dataset::new(path)).await
@@ -92,6 +107,12 @@ async fn main() -> Result<()> {
                 std::time::Duration::from_secs(minutes * 60),
             )
             .await
+        }
+        Cmd::Benchmark { dataset } => {
+            let path = dataset.map_or_else(default_dataset, Ok)?;
+            let takes = Dataset::new(path).takes()?;
+            write!(std::io::stdout(), "{}", benchmark::run(&takes))?;
+            Ok(())
         }
         Cmd::Evaluate { dataset } => {
             let path = dataset.map_or_else(default_dataset, Ok)?;

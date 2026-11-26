@@ -1,4 +1,4 @@
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
 use futures::StreamExt as _;
@@ -38,10 +38,25 @@ enum SessionEnd {
     Lost(String),
 }
 
-pub fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+struct ArrivalClock {
+    connected: Instant,
+    connected_unix_ms: u64,
+}
+
+impl ArrivalClock {
+    fn start() -> Self {
+        Self {
+            connected: Instant::now(),
+            connected_unix_ms: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX)),
+        }
+    }
+
+    fn now_ms(&self) -> u64 {
+        let elapsed = u64::try_from(self.connected.elapsed().as_millis()).unwrap_or(u64::MAX);
+        self.connected_unix_ms.saturating_add(elapsed)
+    }
 }
 
 pub fn log(line: &str) {
@@ -98,6 +113,7 @@ async fn stream_until_lost(
         strap = Strap::connect() => strap?,
         _ = shutdown.wait_for(|stop| *stop) => return Ok(SessionEnd::Shutdown),
     };
+    let clock = ArrivalClock::start();
     let mut frames = strap.frames().await?;
     strap.send(Command::RealtimeRawStream { on: true }).await?;
     emit(Event::Status(StrapStatus::Streaming {
@@ -113,12 +129,12 @@ async fn stream_until_lost(
                 if let Some(batch) = ImuBatch::decode(&frame) {
                     emit(Event::Batch {
                         samples: batch.samples,
-                        arrived_ms: now_ms(),
+                        arrived_ms: clock.now_ms(),
                     });
                 } else if let Some(samples) = optical::decode(&frame) {
                     emit(Event::Optical {
                         samples,
-                        arrived_ms: now_ms(),
+                        arrived_ms: clock.now_ms(),
                     });
                 }
             }

@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use anyhow::{Result, ensure};
 use tokio::sync::watch;
 
@@ -41,8 +43,11 @@ pub async fn run(dataset: &Dataset) -> Result<()> {
             arrived_ms,
         } => {
             let stamped = timeline.push(&samples, arrived_ms);
-            for detection in detector.push(&stamped) {
-                fire(detection);
+            let scan_started = Instant::now();
+            let detections = detector.push(&stamped);
+            let scan = scan_started.elapsed();
+            for detection in detections {
+                fire(detection, arrived_ms, scan);
             }
         }
         Event::Optical { .. } => {}
@@ -55,16 +60,20 @@ pub async fn run(dataset: &Dataset) -> Result<()> {
     Ok(())
 }
 
-fn fire(detection: Detection) {
+fn fire(detection: Detection, arrived_ms: u64, scan: Duration) {
     let Some(argv @ &[program, ref args @ ..]) = command(detection.label) else {
         return;
     };
     let shown = argv.join(" ");
     log(&format!(
-        "{:?} -> {shown} ({} ms after the peak)",
+        "{:?} -> {shown}: its batch arrived {} ms after the peak, which was sample {} of its batch; {} later batches waited for; detector took {} us",
         detection.label,
-        session::now_ms().saturating_sub(detection.t)
+        arrived_ms.saturating_sub(detection.t),
+        detection.index_in_batch,
+        detection.batches_waited,
+        scan.as_micros()
     ));
+    let spawned = Instant::now();
     let mut process = tokio::process::Command::new(program);
     process.args(args);
     if std::env::var_os("YDOTOOL_SOCKET").is_none()
@@ -76,9 +85,11 @@ fn fire(detection: Detection) {
         );
     }
     tokio::spawn(async move {
-        match process.status().await {
-            Ok(status) if status.success() => {}
-            Ok(status) => log(&format!("{shown} exited with {status}")),
+        let outcome = process.status().await;
+        let ran_ms = spawned.elapsed().as_millis();
+        match outcome {
+            Ok(status) if status.success() => log(&format!("{shown} exited after {ran_ms} ms")),
+            Ok(status) => log(&format!("{shown} exited with {status} after {ran_ms} ms")),
             Err(e) => log(&format!("could not run {shown}: {e}")),
         }
     });

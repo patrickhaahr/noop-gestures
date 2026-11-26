@@ -6,7 +6,7 @@ use crate::recognizer::{
 };
 use crate::timeline::TimedSample;
 
-pub const COOLDOWN_MS: u64 = 1_000;
+pub const COOLDOWN_SAMPLES: u64 = 100;
 const HISTORY: usize = 400;
 const LOOKAHEAD: usize = if HALF_WINDOW > PEAK_RADIUS {
     HALF_WINDOW
@@ -18,12 +18,16 @@ const LOOKAHEAD: usize = if HALF_WINDOW > PEAK_RADIUS {
 pub struct Detection {
     pub label: Label,
     pub t: u64,
+    pub index_in_batch: u64,
+    pub batches_waited: usize,
 }
 
 pub struct Detector {
     recognizer: Recognizer,
     buffer: VecDeque<TimedSample>,
-    scanned_through: Option<u64>,
+    batch_starts: VecDeque<u64>,
+    received: u64,
+    scanned: u64,
     quiet_until: u64,
 }
 
@@ -33,42 +37,68 @@ impl Detector {
         Self {
             recognizer,
             buffer: VecDeque::new(),
-            scanned_through: None,
+            batch_starts: VecDeque::new(),
+            received: 0,
+            scanned: 0,
             quiet_until: 0,
         }
     }
 
-    pub fn push(&mut self, stamped: &[TimedSample]) -> Vec<Detection> {
-        if let Some(first) = stamped.first() {
-            while self.buffer.back().is_some_and(|s| s.t >= first.t) {
-                self.buffer.pop_back();
-            }
-        }
-        self.buffer.extend(stamped);
+    pub fn push(&mut self, batch: &[TimedSample]) -> Vec<Detection> {
+        self.batch_starts.push_back(self.received);
+        self.buffer.extend(batch);
+        self.received += count(batch.len());
         let samples = self.buffer.make_contiguous();
+        let oldest = self.received - count(samples.len());
         let magnitudes: Vec<f32> = samples.iter().map(activity).collect();
         let ready = samples.len().saturating_sub(LOOKAHEAD);
         let mut detections = Vec::new();
-        for (i, sample) in samples.iter().enumerate().take(ready) {
-            if self.scanned_through.is_some_and(|t| sample.t <= t) {
+        for (i, (sequence, sample)) in (oldest..).zip(samples.iter()).enumerate().take(ready) {
+            if sequence < self.scanned.max(self.quiet_until)
+                || !is_peak(&magnitudes, i, PEAK_ACTIVITY)
+            {
                 continue;
             }
-            self.scanned_through = Some(sample.t);
-            if sample.t < self.quiet_until || !is_peak(&magnitudes, i, PEAK_ACTIVITY) {
+            let Some(label) = self.recognizer.classify(&features(samples, i)) else {
+                continue;
+            };
+            if label == Label::Idle {
                 continue;
             }
-            match self.recognizer.classify(&features(samples, i)) {
-                Some(Label::Idle) | None => {}
-                Some(label) => {
-                    self.quiet_until = sample.t + COOLDOWN_MS;
-                    detections.push(Detection { label, t: sample.t });
-                }
-            }
+            let batches_waited = self
+                .batch_starts
+                .iter()
+                .rev()
+                .take_while(|&&start| start > sequence)
+                .count();
+            let batch_start = self
+                .batch_starts
+                .iter()
+                .rev()
+                .nth(batches_waited)
+                .copied()
+                .unwrap_or(oldest);
+            self.quiet_until = sequence + COOLDOWN_SAMPLES;
+            detections.push(Detection {
+                label,
+                t: sample.t,
+                index_in_batch: sequence - batch_start,
+                batches_waited,
+            });
         }
+        self.scanned = self.scanned.max(oldest + count(ready));
         let excess = self.buffer.len().saturating_sub(HISTORY);
         self.buffer.drain(..excess);
+        let oldest = self.received - count(self.buffer.len());
+        while self.batch_starts.get(1).is_some_and(|&next| next <= oldest) {
+            self.batch_starts.pop_front();
+        }
         detections
     }
+}
+
+fn count(samples: usize) -> u64 {
+    u64::try_from(samples).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]
@@ -121,9 +151,21 @@ mod tests {
             detect(&samples),
             vec![Detection {
                 label: Label::Left,
-                t: 1_050
+                t: 1_050,
+                index_in_batch: 5,
+                batches_waited: 0,
             }]
         );
+    }
+
+    #[test]
+    fn a_swing_fires_when_timestamps_step_back_over_its_peak() {
+        let mut samples = stream(&[(100, swing(Label::Left, 1, 1.0))]);
+        for late in samples.iter_mut().skip(200) {
+            late.t -= 400;
+        }
+        let labels: Vec<Label> = detect(&samples).iter().map(|d| d.label).collect();
+        assert_eq!(labels, vec![Label::Left]);
     }
 
     #[test]

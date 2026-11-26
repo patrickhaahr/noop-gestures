@@ -19,7 +19,7 @@ use tokio::sync::{broadcast, watch};
 use crate::dataset::{Dataset, Label, Take};
 use crate::optical::OpticalSample;
 use crate::session::{self, StrapStatus};
-use crate::timeline::{SAMPLE_PERIOD_MS, TimedSample, Timeline};
+use crate::timeline::{NOMINAL_SAMPLE_PERIOD_US, TimedSample, Timeline};
 
 const PAGE: &str = include_str!("page.html");
 const COVER_TIMEOUT: Duration = Duration::from_secs(4);
@@ -186,7 +186,7 @@ async fn record(State(state): State<Arc<AppState>>, Json(req): Json<RecordReques
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     let samples = lock(&state.timeline).window(req.start_ms, end_ms);
-    let expected = req.label.window_ms() / SAMPLE_PERIOD_MS;
+    let expected = req.label.window_ms() * 1_000 / NOMINAL_SAMPLE_PERIOD_US;
     if !covered_enough(samples.len(), expected) {
         return ApiError::Incomplete("the take has gaps; Bluetooth dropped batches")
             .into_response();

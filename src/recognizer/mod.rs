@@ -3,8 +3,10 @@ pub mod evaluate;
 use crate::dataset::{Label, Take};
 use crate::timeline::TimedSample;
 
-pub const HALF_WINDOW: usize = 60;
-pub const PEAK_RADIUS: usize = 60;
+pub const PRE_SAMPLES: usize = 25;
+pub const POST_SAMPLES: usize = 22;
+pub const EARLY_MIN_POST: usize = 3;
+const EARLY_DISTANCE_RATIO: f32 = 0.75;
 pub const PEAK_ACTIVITY: f32 = 60.0;
 const GYRO_SCALE_DPS: f32 = 200.0;
 const DPS_PER_G_OF_JOLT: f32 = 50.0;
@@ -24,19 +26,19 @@ pub fn is_peak(magnitudes: &[f32], at: usize, threshold: f32) -> bool {
         return false;
     };
     let before = magnitudes
-        .get(at.saturating_sub(PEAK_RADIUS)..at)
+        .get(at.saturating_sub(PRE_SAMPLES)..at)
         .unwrap_or_default();
     let after = magnitudes
-        .get(at + 1..magnitudes.len().min(at + 1 + PEAK_RADIUS))
+        .get(at + 1..magnitudes.len().min(at + 1 + POST_SAMPLES))
         .unwrap_or_default();
     peak >= threshold && before.iter().all(|&m| m < peak) && after.iter().all(|&m| m <= peak)
 }
 
 #[must_use]
-pub fn features(samples: &[TimedSample], centre: usize) -> Vec<f32> {
+pub fn features(samples: &[TimedSample], centre: usize, post: usize) -> Vec<f32> {
     let last = samples.len().saturating_sub(1);
-    (0..2 * HALF_WINDOW)
-        .map(|k| (centre + k).saturating_sub(HALF_WINDOW).min(last))
+    (0..=PRE_SAMPLES + post)
+        .map(|k| (centre + k).saturating_sub(PRE_SAMPLES).min(last))
         .filter_map(|i| samples.get(i))
         .flat_map(|s| {
             let [gx, gy, gz] = s.g.map(|v| v / GYRO_SCALE_DPS);
@@ -74,7 +76,10 @@ pub fn segments(take: &Take) -> Vec<Vec<f32>> {
             .into_iter()
             .collect(),
     };
-    centres.into_iter().map(|c| features(&samples, c)).collect()
+    centres
+        .into_iter()
+        .map(|c| features(&samples, c, POST_SAMPLES))
+        .collect()
 }
 
 #[derive(Clone)]
@@ -124,16 +129,30 @@ impl Recognizer {
 
     #[must_use]
     pub fn classify(&self, features: &[f32]) -> Option<Label> {
-        self.nearest(features, None)
+        self.nearest(features, None).map(|(_, label)| label)
     }
 
-    fn nearest(&self, features: &[f32], excluded_take: Option<usize>) -> Option<Label> {
+    #[must_use]
+    pub fn classify_early(&self, prefix: &[f32]) -> Option<Label> {
+        let (distance, label) = self.nearest(prefix, None)?;
+        if label == Label::Idle {
+            return None;
+        }
+        let rival = self
+            .templates
+            .iter()
+            .filter(|t| t.label != label)
+            .map(|t| squared_distance(&t.features, prefix))
+            .min_by(f32::total_cmp)?;
+        (distance < rival * EARLY_DISTANCE_RATIO * EARLY_DISTANCE_RATIO).then_some(label)
+    }
+
+    fn nearest(&self, features: &[f32], excluded_take: Option<usize>) -> Option<(f32, Label)> {
         self.templates
             .iter()
             .filter(|t| Some(t.take) != excluded_take)
             .map(|t| (squared_distance(&t.features, features), t.label))
             .min_by(|a, b| a.0.total_cmp(&b.0))
-            .map(|(_, label)| label)
     }
 }
 
@@ -196,10 +215,10 @@ pub mod tests {
         let samples: Vec<TimedSample> = (0..200u16)
             .map(|i| sample(u64::from(i), [200.0 * f32::from(i), 0.0, 0.0]))
             .collect();
-        let f = features(&samples, 10);
+        let f = features(&samples, 10, POST_SAMPLES);
         assert_eq!(
-            (f.len(), f.first().copied(), f.get(60 * 6).copied()),
-            (720, Some(0.0), Some(10.0))
+            (f.len(), f.first().copied(), f.get(PRE_SAMPLES * 6).copied()),
+            ((PRE_SAMPLES + 1 + POST_SAMPLES) * 6, Some(0.0), Some(10.0))
         );
     }
 
@@ -210,5 +229,35 @@ pub mod tests {
         let query = segments(&swing(Label::Idle, 1, -0.9));
         let labels: Vec<Option<Label>> = query.iter().map(|f| recognizer.classify(f)).collect();
         assert_eq!(labels, vec![Some(Label::Right)]);
+    }
+
+    fn early(recognizer: &Recognizer, take: &Take) -> Option<Label> {
+        recognizer.classify_early(&features(&take.samples, 75, EARLY_MIN_POST))
+    }
+
+    fn rivals() -> Recognizer {
+        Recognizer::train(&[
+            swing(Label::Left, 1, 1.0),
+            swing(Label::Right, 1, -1.0),
+            swing(Label::Idle, 0, 1.0),
+        ])
+    }
+
+    #[test]
+    fn a_prefix_far_closer_to_one_gesture_classifies_early() {
+        assert_eq!(
+            early(&rivals(), &swing(Label::Left, 1, 0.95)),
+            Some(Label::Left)
+        );
+    }
+
+    #[test]
+    fn a_prefix_nearest_to_idle_does_not_classify_early() {
+        assert_eq!(early(&rivals(), &swing(Label::Idle, 0, 0.95)), None);
+    }
+
+    #[test]
+    fn a_prefix_between_two_gestures_does_not_classify_early() {
+        assert_eq!(early(&rivals(), &swing(Label::Left, 1, 0.05)), None);
     }
 }

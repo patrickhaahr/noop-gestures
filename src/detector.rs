@@ -2,21 +2,23 @@ use std::collections::VecDeque;
 
 use crate::dataset::Label;
 use crate::recognizer::{
-    HALF_WINDOW, PEAK_ACTIVITY, PEAK_RADIUS, Recognizer, activity, features, is_peak,
+    EARLY_MIN_POST, PEAK_ACTIVITY, POST_SAMPLES, Recognizer, activity, features, is_peak,
 };
 use crate::timeline::TimedSample;
 
 pub const COOLDOWN_SAMPLES: u64 = 100;
 const HISTORY: usize = 400;
-const LOOKAHEAD: usize = if HALF_WINDOW > PEAK_RADIUS {
-    HALF_WINDOW
-} else {
-    PEAK_RADIUS
-};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Evidence {
+    FullWindow,
+    Prefix { samples_past_peak: usize },
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Detection {
     pub label: Label,
+    pub evidence: Evidence,
     pub t: u64,
     pub index_in_batch: u64,
     pub batches_waited: usize,
@@ -51,20 +53,30 @@ impl Detector {
         let samples = self.buffer.make_contiguous();
         let oldest = self.received - count(samples.len());
         let magnitudes: Vec<f32> = samples.iter().map(activity).collect();
-        let ready = samples.len().saturating_sub(LOOKAHEAD);
+        let ready = samples.len().saturating_sub(POST_SAMPLES);
+        let early_ready = samples.len().saturating_sub(EARLY_MIN_POST);
         let mut detections = Vec::new();
-        for (i, (sequence, sample)) in (oldest..).zip(samples.iter()).enumerate().take(ready) {
+        for (i, (sequence, sample)) in (oldest..).zip(samples.iter()).enumerate().take(early_ready)
+        {
             if sequence < self.scanned.max(self.quiet_until)
                 || !is_peak(&magnitudes, i, PEAK_ACTIVITY)
             {
                 continue;
             }
-            let Some(label) = self.recognizer.classify(&features(samples, i)) else {
+            let (label, evidence) = if i < ready {
+                let window = features(samples, i, POST_SAMPLES);
+                (self.recognizer.classify(&window), Evidence::FullWindow)
+            } else {
+                let samples_past_peak = samples.len() - 1 - i;
+                let prefix = features(samples, i, samples_past_peak);
+                (
+                    self.recognizer.classify_early(&prefix),
+                    Evidence::Prefix { samples_past_peak },
+                )
+            };
+            let Some(label) = label.filter(|&l| l != Label::Idle) else {
                 continue;
             };
-            if label == Label::Idle {
-                continue;
-            }
             let batches_waited = self
                 .batch_starts
                 .iter()
@@ -81,6 +93,7 @@ impl Detector {
             self.quiet_until = sequence + COOLDOWN_SAMPLES;
             detections.push(Detection {
                 label,
+                evidence,
                 t: sample.t,
                 index_in_batch: sequence - batch_start,
                 batches_waited,
@@ -151,9 +164,55 @@ mod tests {
             detect(&samples),
             vec![Detection {
                 label: Label::Left,
+                evidence: Evidence::FullWindow,
                 t: 1_050,
                 index_in_batch: 5,
                 batches_waited: 0,
+            }]
+        );
+    }
+
+    #[test]
+    fn a_confident_peak_near_the_batch_end_fires_early_and_only_once() {
+        let samples = stream(&[(115, swing(Label::Left, 1, 1.0))]);
+        assert_eq!(
+            detect(&samples),
+            vec![Detection {
+                label: Label::Left,
+                evidence: Evidence::Prefix {
+                    samples_past_peak: 9
+                },
+                t: 1_900,
+                index_in_batch: 90,
+                batches_waited: 0,
+            }]
+        );
+    }
+
+    #[test]
+    fn an_ambiguous_peak_near_the_batch_end_waits_for_the_full_window() {
+        let diverging_after_the_peak = |label, tail: f32| {
+            let mut take = swing(label, 1, 1.0);
+            for late in take.samples.iter_mut().skip(86) {
+                late.g[0] = tail;
+            }
+            take
+        };
+        let left = diverging_after_the_peak(Label::Left, 100.0);
+        let right = diverging_after_the_peak(Label::Right, -100.0);
+        let mut detector = Detector::new(Recognizer::train(&[left.clone(), right]));
+        let fired: Vec<Detection> = stream(&[(115, left)])
+            .chunks(100)
+            .flat_map(|batch| detector.push(batch))
+            .collect();
+        assert_eq!(
+            fired,
+            vec![Detection {
+                label: Label::Left,
+                evidence: Evidence::FullWindow,
+                t: 1_900,
+                index_in_batch: 90,
+                batches_waited: 1,
             }]
         );
     }

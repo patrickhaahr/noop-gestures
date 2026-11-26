@@ -4,9 +4,9 @@ use anyhow::{Result, ensure};
 use tokio::sync::watch;
 
 use crate::dataset::{Dataset, Label};
-use crate::detector::{Detection, Detector};
+use crate::detector::{Detection, Detector, Evidence};
 use crate::niri::Niri;
-use crate::recognizer::Recognizer;
+use crate::recognizer::{POST_SAMPLES, Recognizer};
 use crate::session::{self, Event, log};
 use crate::timeline::{TimedSample, Timeline};
 
@@ -78,8 +78,14 @@ fn fire(detection: Detection, arrived_ms: u64, scan: Duration, niri: &Niri) {
         Action::Process(program, args) => format!("{program} {}", args.join(" ")),
         Action::Niri(name) => format!("niri {name}"),
     };
+    let evidence = match detection.evidence {
+        Evidence::FullWindow => "on the full window".to_owned(),
+        Evidence::Prefix { samples_past_peak } => {
+            format!("early on {samples_past_peak} of {POST_SAMPLES} samples past the peak")
+        }
+    };
     log(&format!(
-        "{:?} -> {shown}: its batch arrived {} ms after the peak, which was sample {} of its batch; {} later batches waited for; detector took {} us",
+        "{:?} -> {shown}, {evidence}: its batch arrived {} ms after the peak, which was sample {} of its batch; {} later batches waited for; detector took {} us",
         detection.label,
         arrived_ms.saturating_sub(detection.t),
         detection.index_in_batch,

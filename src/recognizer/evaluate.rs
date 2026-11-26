@@ -99,7 +99,7 @@ pub fn leave_one_take_out(takes: &[Take]) -> Confusion {
     let mut confusion = Confusion::default();
     for (index, take) in takes.iter().enumerate() {
         for features in segments(take) {
-            if let Some(predicted) = recognizer.nearest(&features, Some(index)) {
+            if let Some((_, predicted)) = recognizer.nearest(&features, Some(index)) {
                 *confusion.0.entry((take.label, predicted)).or_default() += 1;
             }
         }

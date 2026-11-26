@@ -7,16 +7,17 @@ use crate::recognizer::Recognizer;
 use crate::session::{self, Event, log};
 use crate::timeline::{TimedSample, Timeline};
 
-const fn niri_action(label: Label) -> Option<&'static str> {
+const fn command(label: Label) -> Option<&'static [&'static str]> {
     match label {
-        Label::Overview => Some("toggle-overview"),
-        Label::Left => Some("focus-column-left"),
-        Label::Right => Some("focus-column-right"),
-        Label::WorkspaceUp => Some("focus-workspace-up"),
-        Label::WorkspaceDown => Some("focus-workspace-down"),
-        Label::ReverseTwist => Some("maximize-column"),
-        Label::Knock => Some("center-column"),
-        Label::Idle | Label::Fist => None,
+        Label::Overview => Some(&["niri", "msg", "action", "toggle-overview"]),
+        Label::Left => Some(&["niri", "msg", "action", "focus-column-left"]),
+        Label::Right => Some(&["niri", "msg", "action", "focus-column-right"]),
+        Label::WorkspaceUp => Some(&["niri", "msg", "action", "focus-workspace-up"]),
+        Label::WorkspaceDown => Some(&["niri", "msg", "action", "focus-workspace-down"]),
+        Label::ReverseTwist => Some(&["ydotool", "mousemove", "--wheel", "--", "0", "-5"]),
+        Label::Knock => Some(&["openhome", "ir", "edifier", "mute"]),
+        Label::Fist => Some(&["playerctl", "play-pause"]),
+        Label::Idle => None,
     }
 }
 
@@ -56,23 +57,30 @@ pub async fn run(dataset: &Dataset) -> Result<()> {
 }
 
 fn fire(detection: Detection) {
-    let Some(action) = niri_action(detection.label) else {
+    let Some(argv @ &[program, ref args @ ..]) = command(detection.label) else {
         return;
     };
+    let shown = argv.join(" ");
     log(&format!(
-        "{:?} -> {action} ({} ms after the peak)",
+        "{:?} -> {shown} ({} ms after the peak)",
         detection.label,
         session::now_ms().saturating_sub(detection.t)
     ));
+    let mut process = tokio::process::Command::new(program);
+    process.args(args);
+    if std::env::var_os("YDOTOOL_SOCKET").is_none()
+        && let Some(runtime) = std::env::var_os("XDG_RUNTIME_DIR")
+    {
+        process.env(
+            "YDOTOOL_SOCKET",
+            std::path::Path::new(&runtime).join(".ydotool_socket"),
+        );
+    }
     tokio::spawn(async move {
-        match tokio::process::Command::new("niri")
-            .args(["msg", "action", action])
-            .status()
-            .await
-        {
+        match process.status().await {
             Ok(status) if status.success() => {}
-            Ok(status) => log(&format!("niri msg action {action} exited with {status}")),
-            Err(e) => log(&format!("could not run niri: {e}")),
+            Ok(status) => log(&format!("{shown} exited with {status}")),
+            Err(e) => log(&format!("could not run {shown}: {e}")),
         }
     });
 }

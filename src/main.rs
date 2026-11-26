@@ -5,6 +5,7 @@ mod dataset;
 mod detector;
 mod frame;
 mod imu;
+mod niri;
 mod optical;
 mod probe;
 mod recognizer;

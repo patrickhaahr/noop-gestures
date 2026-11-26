@@ -14,6 +14,7 @@ use crate::strap::Strap;
 
 const REALTIME_RAW_PACKET_TYPE: u8 = 43;
 const COMMAND_RESPONSE_PACKET_TYPE: u8 = 36;
+const EVENT_PACKET_TYPE: u8 = 48;
 const NEXT_FEATURE_FLAG_NAME: u8 = 118;
 const FEATURE_FLAG_NAMES_END: u8 = 0xFF;
 const MAX_FEATURE_FLAG_NAMES: usize = 24;
@@ -104,7 +105,14 @@ impl Report {
             .by_type
             .entry((frame.packet_type(), frame.bytes().len()))
             .or_default() += 1;
-        if frame.packet_type() != REALTIME_RAW_PACKET_TYPE {
+        if frame.packet_type() == EVENT_PACKET_TYPE {
+            writeln!(
+                self.out,
+                "t={t_ms:>6}ms event={} {}",
+                frame.bytes().get(6).copied().unwrap_or_default(),
+                hex(frame.bytes())
+            )?;
+        } else if frame.packet_type() != REALTIME_RAW_PACKET_TYPE {
             writeln!(
                 self.out,
                 "t={t_ms:>6}ms type={} {}",

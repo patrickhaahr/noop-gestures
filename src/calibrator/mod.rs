@@ -29,7 +29,6 @@ const MIN_COVERAGE: f64 = 0.8;
 pub enum Update {
     Status(StrapStatus),
     Batch(Vec<TimedSample>),
-    Optical(Vec<OpticalSample>),
 }
 
 struct AppState {
@@ -74,8 +73,7 @@ pub async fn run(port: u16, dataset: Dataset) -> Result<()> {
             samples,
             arrived_ms,
         } => {
-            let stamped = lock(&session_state.optical).push(&samples, arrived_ms);
-            session_state.updates.send(Update::Optical(stamped)).ok();
+            lock(&session_state.optical).push(&samples, arrived_ms);
         }
     };
     let session = tokio::spawn(session::run(emit, shutdown));
@@ -131,7 +129,6 @@ fn to_event(update: &Update) -> Event {
     let (name, json) = match update {
         Update::Status(status) => ("status", serde_json::to_string(status)),
         Update::Batch(samples) => ("batch", serde_json::to_string(samples)),
-        Update::Optical(samples) => ("optical", serde_json::to_string(samples)),
     };
     Event::default()
         .event(name)

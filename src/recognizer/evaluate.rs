@@ -1,8 +1,65 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use super::{Recognizer, segments};
+use super::{Recognizer, monotonic, segments};
 use crate::dataset::{Label, Take};
+use crate::detector::Detector;
+use crate::timeline::SAMPLE_PERIOD_MS;
+
+const LONG_IDLE_SAMPLES: usize = 6_000;
+const BATCH_SAMPLES: usize = 100;
+
+pub struct Replay {
+    seconds: u64,
+    fired: BTreeMap<Label, usize>,
+}
+
+#[must_use]
+pub fn replay_long_idle(takes: &[Take]) -> Vec<Replay> {
+    takes
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| t.label == Label::Idle && t.samples.len() >= LONG_IDLE_SAMPLES)
+        .map(|(held_out, take)| {
+            let others = takes.iter().enumerate().filter(|&(i, _)| i != held_out);
+            let mut detector = Detector::new(Recognizer::train(others.map(|(_, t)| t)));
+            let samples = monotonic(&take.samples);
+            let mut fired = BTreeMap::new();
+            for detection in samples
+                .chunks(BATCH_SAMPLES)
+                .flat_map(|batch| detector.push(batch))
+            {
+                *fired.entry(detection.label).or_default() += 1;
+            }
+            Replay {
+                seconds: u64::try_from(samples.len()).unwrap_or(0) * SAMPLE_PERIOD_MS / 1_000,
+                fired,
+            }
+        })
+        .collect()
+}
+
+impl fmt::Display for Replay {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let total: usize = self.fired.values().sum();
+        let detail: Vec<String> = self
+            .fired
+            .iter()
+            .map(|(label, n)| format!("{} {n}", label.name()))
+            .collect();
+        write!(
+            f,
+            "replayed a {} min {} s idle take live: {total} gestures would fire",
+            self.seconds / 60,
+            self.seconds % 60
+        )?;
+        if detail.is_empty() {
+            Ok(())
+        } else {
+            write!(f, " ({})", detail.join(", "))
+        }
+    }
+}
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Confusion(BTreeMap<(Label, Label), usize>);

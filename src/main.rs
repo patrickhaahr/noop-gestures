@@ -7,6 +7,7 @@ mod imu;
 mod optical;
 mod probe;
 mod recognizer;
+mod record;
 mod session;
 mod strap;
 mod timeline;
@@ -47,6 +48,13 @@ enum Cmd {
         #[arg(long, help = "JSONL file of recorded takes")]
         dataset: Option<PathBuf>,
     },
+    #[command(about = "Record one long continuous idle take while you work normally")]
+    RecordIdle {
+        #[arg(long, default_value_t = 8)]
+        minutes: u64,
+        #[arg(long, help = "JSONL file the take is appended to")]
+        dataset: Option<PathBuf>,
+    },
     #[command(about = "Score the recognizer on the recorded takes, holding out one take at a time")]
     Evaluate {
         #[arg(long, help = "JSONL file of recorded takes")]
@@ -77,11 +85,22 @@ async fn main() -> Result<()> {
             let path = dataset.map_or_else(default_dataset, Ok)?;
             daemon::run(&Dataset::new(path)).await
         }
+        Cmd::RecordIdle { minutes, dataset } => {
+            let path = dataset.map_or_else(default_dataset, Ok)?;
+            record::idle(
+                &Dataset::new(path),
+                std::time::Duration::from_secs(minutes * 60),
+            )
+            .await
+        }
         Cmd::Evaluate { dataset } => {
             let path = dataset.map_or_else(default_dataset, Ok)?;
             let takes = Dataset::new(path).takes()?;
             let confusion = recognizer::evaluate::leave_one_take_out(&takes);
             writeln!(std::io::stdout(), "{confusion}")?;
+            for replay in recognizer::evaluate::replay_long_idle(&takes) {
+                writeln!(std::io::stdout(), "{replay}")?;
+            }
             Ok(())
         }
     }

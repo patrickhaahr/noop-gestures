@@ -16,7 +16,7 @@ const fn niri_action(label: Label) -> Option<&'static str> {
         Label::WorkspaceDown => Some("focus-workspace-down"),
         Label::ReverseTwist => Some("maximize-column"),
         Label::Knock => Some("center-column"),
-        Label::Idle | Label::Fist | Label::Pinch => None,
+        Label::Idle | Label::Fist => None,
     }
 }
 

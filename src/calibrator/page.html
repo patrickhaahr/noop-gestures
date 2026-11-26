@@ -57,10 +57,6 @@
     <div class="plot-head"><span>gyroscope · °/s</span><span class="legend"><b style="color:var(--x)">x</b><b style="color:var(--y)">y</b><b style="color:var(--z)">z</b></span></div>
     <canvas id="gyro"></canvas>
   </section>
-  <section class="panel">
-    <div class="plot-head"><span>optical · raw counts, auto-scaled</span><span class="legend"><b style="color:var(--accent)">p</b></span></div>
-    <canvas id="optical"></canvas>
-  </section>
 
   <section class="labels" id="labels"></section>
 
@@ -84,13 +80,11 @@ const HINTS = {
   reverse_twist: "Twist the wrist palm-down and back; the opposite of overview.",
   knock: "Knock the strap or wrist on the desk twice.",
   fist: "Clench the fist hard for a moment, then release. Keep the arm still.",
-  pinch: "Touch thumb to index finger and release. Keep the arm still.",
 };
 const VIEW_MS = 6000;
 const DISPLAY_LAG_MS = 1300;
-const COLORS = ["--x", "--y", "--z", "--accent"].map((v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim());
+const COLORS = ["--x", "--y", "--z"].map((v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim());
 const samples = [];
-const optical = [];
 let labels = [];
 let selected = "left";
 let busy = false;
@@ -209,41 +203,11 @@ function draw(canvas, key, range) {
   }
 }
 
-function drawOptical(canvas) {
-  const dpr = devicePixelRatio || 1;
-  const w = canvas.clientWidth, h = canvas.clientHeight;
-  if (canvas.width !== w * dpr) { canvas.width = w * dpr; canvas.height = h * dpr; }
-  const ctx = canvas.getContext("2d");
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, w, h);
-  const end = Date.now() - DISPLAY_LAG_MS, start = end - VIEW_MS;
-  const x = (t) => ((t - start) / VIEW_MS) * w;
-  if (window_) {
-    ctx.fillStyle = "rgba(255,77,79,.14)";
-    ctx.fillRect(x(window_.start), 0, x(window_.end) - x(window_.start), h);
-  }
-  const visible = optical.filter((s) => s.t >= start);
-  if (!visible.length) return;
-  let lo = Infinity, hi = -Infinity;
-  for (const s of visible) { lo = Math.min(lo, s.p); hi = Math.max(hi, s.p); }
-  const span = Math.max(hi - lo, 1);
-  ctx.strokeStyle = COLORS[3];
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  visible.forEach((s, i) => {
-    const px = x(s.t), py = h - 4 - ((s.p - lo) / span) * (h - 8);
-    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-  });
-  ctx.stroke();
-}
-
 function frame() {
   const cutoff = Date.now() - VIEW_MS - DISPLAY_LAG_MS - 1000;
   while (samples.length && samples[0].t < cutoff) samples.shift();
-  while (optical.length && optical[0].t < cutoff) optical.shift();
   draw($("accel"), "a", 2);
   draw($("gyro"), "g", 400);
-  drawOptical($("optical"));
   requestAnimationFrame(frame);
 }
 
@@ -257,7 +221,6 @@ function showStatus(s) {
 const events = new EventSource("/events");
 events.addEventListener("status", (e) => showStatus(JSON.parse(e.data)));
 events.addEventListener("batch", (e) => samples.push(...JSON.parse(e.data)));
-events.addEventListener("optical", (e) => optical.push(...JSON.parse(e.data)));
 events.onerror = () => showStatus({ state: "disconnected", reason: "calibrator server unreachable" });
 
 document.addEventListener("keydown", (e) => {

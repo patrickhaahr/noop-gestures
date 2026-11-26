@@ -73,7 +73,7 @@ pub fn segments(take: &Take) -> Vec<Vec<f32>> {
             .map(|(i, _)| i)
             .into_iter()
             .collect(),
-        Label::Fist | Label::Pinch => Vec::new(),
+        Label::Fist => Vec::new(),
     };
     centres.into_iter().map(|c| features(&samples, c)).collect()
 }
@@ -94,9 +94,9 @@ fn squared_distance(a: &[f32], b: &[f32]) -> f32 {
 
 impl Recognizer {
     #[must_use]
-    pub fn train(takes: &[Take]) -> Self {
+    pub fn train<'a>(takes: impl IntoIterator<Item = &'a Take>) -> Self {
         let templates = takes
-            .iter()
+            .into_iter()
             .enumerate()
             .flat_map(|(take, t)| {
                 segments(t).into_iter().map(move |features| Template {

@@ -26,14 +26,19 @@ impl Command {
         let (number, payload) = self.number_and_payload();
         let mut inner = vec![COMMAND_PACKET_TYPE, seq, number];
         inner.extend_from_slice(payload);
-        let length = u16::try_from(inner.len() + 4)
-            .unwrap_or(u16::MAX)
-            .to_le_bytes();
-        let mut frame = vec![START_OF_FRAME, length[0], length[1], crc8(&length)];
-        frame.extend_from_slice(&inner);
-        frame.extend_from_slice(&crc32fast::hash(&inner).to_le_bytes());
-        frame
+        wrap(&inner)
     }
+}
+
+#[must_use]
+pub fn wrap(inner: &[u8]) -> Vec<u8> {
+    let length = u16::try_from(inner.len() + 4)
+        .unwrap_or(u16::MAX)
+        .to_le_bytes();
+    let mut frame = vec![START_OF_FRAME, length[0], length[1], crc8(&length)];
+    frame.extend_from_slice(inner);
+    frame.extend_from_slice(&crc32fast::hash(inner).to_le_bytes());
+    frame
 }
 
 pub fn crc8(bytes: &[u8]) -> u8 {

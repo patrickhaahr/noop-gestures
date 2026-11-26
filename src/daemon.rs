@@ -5,7 +5,7 @@ use crate::dataset::{Dataset, Label};
 use crate::detector::{Detection, Detector};
 use crate::recognizer::Recognizer;
 use crate::session::{self, Event, log};
-use crate::timeline::Timeline;
+use crate::timeline::{TimedSample, Timeline};
 
 const fn niri_action(label: Label) -> Option<&'static str> {
     match label {
@@ -16,25 +16,19 @@ const fn niri_action(label: Label) -> Option<&'static str> {
         Label::WorkspaceDown => Some("focus-workspace-down"),
         Label::ReverseTwist => Some("maximize-column"),
         Label::Knock => Some("center-column"),
-        Label::Idle => None,
+        Label::Idle | Label::Fist | Label::Pinch => None,
     }
 }
 
 pub async fn run(dataset: &Dataset) -> Result<()> {
     let counts = dataset.counts()?;
-    let missing: Vec<&str> = counts
-        .iter()
-        .filter(|&(_, &n)| n == 0)
-        .map(|(label, _)| label.name())
-        .collect();
     ensure!(
-        missing.is_empty(),
-        "record takes for {} with `noop-gestures calibrate` first ({})",
-        missing.join(", "),
+        counts.get(&Label::Idle).is_some_and(|&n| n > 0),
+        "record idle takes with `noop-gestures calibrate` first ({})",
         dataset.path().display()
     );
     let mut detector = Detector::new(Recognizer::train(&dataset.takes()?));
-    let mut timeline = Timeline::default();
+    let mut timeline = Timeline::<TimedSample>::default();
     log(&format!(
         "trained on {counts:?} from {}",
         dataset.path().display()
@@ -51,6 +45,7 @@ pub async fn run(dataset: &Dataset) -> Result<()> {
                 fire(detection);
             }
         }
+        Event::Optical { .. } => {}
     };
     let (shutdown_tx, shutdown) = watch::channel(false);
     let session = tokio::spawn(session::run(emit, shutdown));

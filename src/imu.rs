@@ -56,18 +56,12 @@ mod tests {
     use crate::frame::Reassembler;
 
     fn imu_frame(ax0: i16, gz99: i16) -> Vec<u8> {
-        let length = u16::try_from(IMU_FRAME_BYTES - 4).unwrap_or_default();
         let mut inner = vec![0u8; IMU_FRAME_BYTES - 8];
         inner[0] = REALTIME_RAW_PACKET_TYPE;
         inner[11..15].copy_from_slice(&1_700_000_000u32.to_le_bytes());
         inner[85..87].copy_from_slice(&ax0.to_le_bytes());
         inner[1088 + 198..1088 + 200].copy_from_slice(&gz99.to_le_bytes());
-        let len = length.to_le_bytes();
-        let crc = crate::frame::crc8(&len);
-        let mut frame = vec![0xAA, len[0], len[1], crc];
-        frame.extend_from_slice(&inner);
-        frame.extend_from_slice(&crc32fast::hash(&inner).to_le_bytes());
-        frame
+        crate::frame::wrap(&inner)
     }
 
     #[test]

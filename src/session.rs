@@ -7,6 +7,7 @@ use tokio::sync::watch;
 
 use crate::frame::Command;
 use crate::imu::{ImuBatch, Sample};
+use crate::optical;
 use crate::strap::Strap;
 
 const RETRY_DELAY: Duration = Duration::from_secs(3);
@@ -24,6 +25,10 @@ pub enum Event {
     Status(StrapStatus),
     Batch {
         samples: Vec<Sample>,
+        arrived_ms: u64,
+    },
+    Optical {
+        samples: Vec<i32>,
         arrived_ms: u64,
     },
 }
@@ -108,6 +113,11 @@ async fn stream_until_lost(
                 if let Some(batch) = ImuBatch::decode(&frame) {
                     emit(Event::Batch {
                         samples: batch.samples,
+                        arrived_ms: now_ms(),
+                    });
+                } else if let Some(samples) = optical::decode(&frame) {
+                    emit(Event::Optical {
+                        samples,
                         arrived_ms: now_ms(),
                     });
                 }

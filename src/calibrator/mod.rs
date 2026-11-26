@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, watch};
 
 use crate::dataset::{Dataset, Label, Take};
+use crate::optical::OpticalSample;
 use crate::session::{self, StrapStatus};
 use crate::timeline::{SAMPLE_PERIOD_MS, TimedSample, Timeline};
 
@@ -28,10 +29,12 @@ const MIN_COVERAGE: f64 = 0.8;
 pub enum Update {
     Status(StrapStatus),
     Batch(Vec<TimedSample>),
+    Optical(Vec<OpticalSample>),
 }
 
 struct AppState {
-    timeline: Mutex<Timeline>,
+    timeline: Mutex<Timeline<TimedSample>>,
+    optical: Mutex<Timeline<OpticalSample>>,
     updates: broadcast::Sender<Update>,
     status: watch::Receiver<StrapStatus>,
     shutdown: watch::Receiver<bool>,
@@ -44,6 +47,7 @@ pub async fn run(port: u16, dataset: Dataset) -> Result<()> {
     let (shutdown_tx, shutdown) = watch::channel(false);
     let state = Arc::new(AppState {
         timeline: Mutex::new(Timeline::default()),
+        optical: Mutex::new(Timeline::default()),
         updates: updates.clone(),
         status,
         shutdown: shutdown.clone(),
@@ -65,6 +69,13 @@ pub async fn run(port: u16, dataset: Dataset) -> Result<()> {
         } => {
             let stamped = lock(&session_state.timeline).push(&samples, arrived_ms);
             session_state.updates.send(Update::Batch(stamped)).ok();
+        }
+        session::Event::Optical {
+            samples,
+            arrived_ms,
+        } => {
+            let stamped = lock(&session_state.optical).push(&samples, arrived_ms);
+            session_state.updates.send(Update::Optical(stamped)).ok();
         }
     };
     let session = tokio::spawn(session::run(emit, shutdown));
@@ -120,6 +131,7 @@ fn to_event(update: &Update) -> Event {
     let (name, json) = match update {
         Update::Status(status) => ("status", serde_json::to_string(status)),
         Update::Batch(samples) => ("batch", serde_json::to_string(samples)),
+        Update::Optical(samples) => ("optical", serde_json::to_string(samples)),
     };
     Event::default()
         .event(name)
@@ -186,6 +198,7 @@ async fn record(State(state): State<Arc<AppState>>, Json(req): Json<RecordReques
         label: req.label,
         start_ms: req.start_ms,
         samples,
+        optical: lock(&state.optical).window(req.start_ms, end_ms),
     };
     state
         .dataset
@@ -215,7 +228,7 @@ async fn undo(State(state): State<Arc<AppState>>) -> Response {
         })
 }
 
-fn lock(timeline: &Mutex<Timeline>) -> std::sync::MutexGuard<'_, Timeline> {
+fn lock<S>(timeline: &Mutex<Timeline<S>>) -> std::sync::MutexGuard<'_, Timeline<S>> {
     timeline.lock().unwrap_or_else(PoisonError::into_inner)
 }
 

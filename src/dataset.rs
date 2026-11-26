@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::optical::OpticalSample;
 use crate::timeline::TimedSample;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -18,10 +19,12 @@ pub enum Label {
     WorkspaceDown,
     ReverseTwist,
     Knock,
+    Fist,
+    Pinch,
 }
 
 impl Label {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 10] = [
         Self::Idle,
         Self::Overview,
         Self::Left,
@@ -30,6 +33,8 @@ impl Label {
         Self::WorkspaceDown,
         Self::ReverseTwist,
         Self::Knock,
+        Self::Fist,
+        Self::Pinch,
     ];
 
     #[must_use]
@@ -43,6 +48,8 @@ impl Label {
             Self::WorkspaceDown => "workspace_down",
             Self::ReverseTwist => "reverse_twist",
             Self::Knock => "knock",
+            Self::Fist => "fist",
+            Self::Pinch => "pinch",
         }
     }
 
@@ -56,7 +63,9 @@ impl Label {
             | Self::WorkspaceUp
             | Self::WorkspaceDown
             | Self::ReverseTwist
-            | Self::Knock => 1_500,
+            | Self::Knock
+            | Self::Fist
+            | Self::Pinch => 1_500,
         }
     }
 }
@@ -66,6 +75,8 @@ pub struct Take {
     pub label: Label,
     pub start_ms: u64,
     pub samples: Vec<TimedSample>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub optical: Vec<OpticalSample>,
 }
 
 pub struct Dataset {
@@ -148,6 +159,7 @@ mod tests {
                 a: [0.0, 0.0, 1.0],
                 g: [0.0; 3],
             }],
+            optical: Vec::new(),
         }
     }
 

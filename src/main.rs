@@ -4,6 +4,7 @@ mod dataset;
 mod detector;
 mod frame;
 mod imu;
+mod optical;
 mod probe;
 mod recognizer;
 mod session;

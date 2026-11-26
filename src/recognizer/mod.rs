@@ -66,7 +66,9 @@ pub fn segments(take: &Take) -> Vec<Vec<f32>> {
         | Label::WorkspaceUp
         | Label::WorkspaceDown
         | Label::ReverseTwist
-        | Label::Knock => magnitudes
+        | Label::Knock
+        | Label::Fist
+        | Label::Pinch => magnitudes
             .iter()
             .enumerate()
             .max_by(|a, b| a.1.total_cmp(b.1))
@@ -150,6 +152,7 @@ pub mod tests {
             label,
             start_ms: 0,
             samples,
+            optical: Vec::new(),
         }
     }
 
@@ -165,6 +168,7 @@ pub mod tests {
             label: Label::Knock,
             start_ms: 0,
             samples,
+            optical: Vec::new(),
         }
     }
 

@@ -66,15 +66,14 @@ pub fn segments(take: &Take) -> Vec<Vec<f32>> {
         | Label::WorkspaceUp
         | Label::WorkspaceDown
         | Label::ReverseTwist
-        | Label::Knock
-        | Label::Fist
-        | Label::Pinch => magnitudes
+        | Label::Knock => magnitudes
             .iter()
             .enumerate()
             .max_by(|a, b| a.1.total_cmp(b.1))
             .map(|(i, _)| i)
             .into_iter()
             .collect(),
+        Label::Fist | Label::Pinch => Vec::new(),
     };
     centres.into_iter().map(|c| features(&samples, c)).collect()
 }

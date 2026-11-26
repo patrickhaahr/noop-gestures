@@ -1,3 +1,4 @@
+mod benchmark;
 mod calibrator;
 mod daemon;
 mod dataset;
@@ -55,6 +56,13 @@ enum Cmd {
         #[arg(long, help = "JSONL file the take is appended to")]
         dataset: Option<PathBuf>,
     },
+    #[command(
+        about = "Replay every take through the live detector in strap-sized batches and report accuracy and latency"
+    )]
+    Benchmark {
+        #[arg(long, help = "JSONL file of recorded takes")]
+        dataset: Option<PathBuf>,
+    },
     #[command(about = "Score the recognizer on the recorded takes, holding out one take at a time")]
     Evaluate {
         #[arg(long, help = "JSONL file of recorded takes")]
@@ -92,6 +100,12 @@ async fn main() -> Result<()> {
                 std::time::Duration::from_secs(minutes * 60),
             )
             .await
+        }
+        Cmd::Benchmark { dataset } => {
+            let path = dataset.map_or_else(default_dataset, Ok)?;
+            let takes = Dataset::new(path).takes()?;
+            write!(std::io::stdout(), "{}", benchmark::run(&takes))?;
+            Ok(())
         }
         Cmd::Evaluate { dataset } => {
             let path = dataset.map_or_else(default_dataset, Ok)?;

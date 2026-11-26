@@ -45,7 +45,7 @@ pub fn features(samples: &[TimedSample], centre: usize) -> Vec<f32> {
         .collect()
 }
 
-fn monotonic(samples: &[TimedSample]) -> Vec<TimedSample> {
+pub fn monotonic(samples: &[TimedSample]) -> Vec<TimedSample> {
     let mut sorted: Vec<TimedSample> = samples.iter().rev().copied().collect();
     sorted.sort_by_key(|s| s.t);
     sorted.dedup_by_key(|s| s.t);
@@ -77,12 +77,14 @@ pub fn segments(take: &Take) -> Vec<Vec<f32>> {
     centres.into_iter().map(|c| features(&samples, c)).collect()
 }
 
+#[derive(Clone)]
 struct Template {
     label: Label,
     take: usize,
     features: Vec<f32>,
 }
 
+#[derive(Clone)]
 pub struct Recognizer {
     templates: Vec<Template>,
 }
@@ -106,6 +108,18 @@ impl Recognizer {
             })
             .collect();
         Self { templates }
+    }
+
+    #[must_use]
+    pub fn holding_out(&self, take: usize) -> Self {
+        Self {
+            templates: self
+                .templates
+                .iter()
+                .filter(|t| t.take != take)
+                .cloned()
+                .collect(),
+        }
     }
 
     #[must_use]

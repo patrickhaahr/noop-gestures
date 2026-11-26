@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>noop gestures · calibrator</title>
+<style>
+  :root {
+    --bg: #0d0f12; --panel: #15181d; --line: #252a31; --text: #e6e8eb; --muted: #8a919c;
+    --x: #ff6b6b; --y: #51cf66; --z: #4dabf7; --accent: #fcc419; --rec: #ff4d4f;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 ui-sans-serif, system-ui, sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 24px 16px 48px; display: grid; gap: 16px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 18px; margin: 0; letter-spacing: .02em; }
+  h1 span { color: var(--muted); font-weight: 400; }
+  .pill { padding: 4px 10px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+  .pill[data-state="streaming"] { color: var(--y); border-color: color-mix(in srgb, var(--y) 40%, transparent); }
+  .pill[data-state="disconnected"] { color: var(--rec); border-color: color-mix(in srgb, var(--rec) 40%, transparent); }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+  .plot-head { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+  .legend b { font-weight: 600; margin-left: 10px; }
+  canvas { width: 100%; height: 150px; display: block; }
+  .labels { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+  .label { text-align: left; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 12px; cursor: pointer; font: inherit; }
+  .label[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .label .key { color: var(--muted); font-size: 12px; float: right; }
+  .label .name { font-size: 16px; font-weight: 600; text-transform: capitalize; }
+  .label .meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .label .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  .controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  button.primary, button.ghost { font: inherit; border-radius: 10px; padding: 10px 16px; cursor: pointer; }
+  button.primary { background: var(--accent); color: #1a1600; border: 0; font-weight: 600; }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  button:disabled { opacity: .5; cursor: default; }
+  #stage { font-size: 28px; font-weight: 700; min-width: 7ch; font-variant-numeric: tabular-nums; }
+  #stage[data-phase="go"] { color: var(--rec); }
+  #message { color: var(--muted); }
+  #message.error { color: var(--rec); }
+  footer { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>noop gestures <span>· calibrator</span></h1>
+    <div id="status" class="pill" data-state="connecting">connecting to strap…</div>
+  </header>
+
+  <section class="panel">
+    <div class="plot-head"><span>accelerometer · g</span><span class="legend"><b style="color:var(--x)">x</b><b style="color:var(--y)">y</b><b style="color:var(--z)">z</b></span></div>
+    <canvas id="accel"></canvas>
+  </section>
+  <section class="panel">
+    <div class="plot-head"><span>gyroscope · °/s</span><span class="legend"><b style="color:var(--x)">x</b><b style="color:var(--y)">y</b><b style="color:var(--z)">z</b></span></div>
+    <canvas id="gyro"></canvas>
+  </section>
+
+  <section class="labels" id="labels"></section>
+
+  <section class="controls">
+    <button class="primary" id="record">Record take <kbd>space</kbd></button>
+    <button class="ghost" id="undo">Undo last <kbd>⌫</kbd></button>
+    <div id="stage"></div>
+    <div id="message">Pick a gesture, press space, perform it on GO.</div>
+  </section>
+
+  <footer id="dataset"></footer>
+</main>
+<script>
+const HINTS = {
+  idle: "Type, rest, reach for the mouse. Everything that must not trigger.",
+  overview: "The gesture that opens and closes the overview.",
+  left: "Swipe to the column on the left.",
+  right: "Swipe to the column on the right.",
+};
+const VIEW_MS = 6000;
+const DISPLAY_LAG_MS = 1300;
+const COLORS = ["--x", "--y", "--z"].map((v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim());
+const samples = [];
+let labels = [];
+let selected = "left";
+let busy = false;
+let window_ = null;
+
+const $ = (id) => document.getElementById(id);
+
+function setMessage(text, error = false) {
+  $("message").textContent = text;
+  $("message").classList.toggle("error", error);
+}
+
+function renderLabels() {
+  $("labels").replaceChildren(...labels.map((l, i) => {
+    const b = document.createElement("button");
+    b.className = "label";
+    b.setAttribute("aria-pressed", String(l.label === selected));
+    b.innerHTML = `<span class="key">${i + 1}</span><div class="name"></div><div class="meta"></div><div class="hint"></div>`;
+    b.querySelector(".name").textContent = l.label;
+    b.querySelector(".meta").textContent = `${l.takes} takes · ${(l.window_ms / 1000).toFixed(1)} s window`;
+    b.querySelector(".hint").textContent = HINTS[l.label] ?? "";
+    b.onclick = () => { selected = l.label; renderLabels(); };
+    return b;
+  }));
+}
+
+function applySummary(s) {
+  labels = s.labels;
+  $("dataset").textContent = `dataset: ${s.dataset}`;
+  renderLabels();
+}
+
+async function api(method, path, body) {
+  const res = await fetch(path, {
+    method,
+    headers: body ? { "content-type": "application/json" } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) throw new Error(await res.text() || res.statusText);
+  return res.json();
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function record() {
+  if (busy) return;
+  const label = labels.find((l) => l.label === selected);
+  if (!label) return;
+  busy = true;
+  $("record").disabled = true;
+  try {
+    for (const n of ["3", "2", "1"]) {
+      $("stage").dataset.phase = "count";
+      $("stage").textContent = n;
+      await sleep(600);
+    }
+    const start = Date.now();
+    window_ = { start, end: start + label.window_ms };
+    $("stage").dataset.phase = "go";
+    $("stage").textContent = "GO";
+    setMessage(`Perform “${label.label}” now.`);
+    await sleep(label.window_ms);
+    $("stage").dataset.phase = "";
+    $("stage").textContent = "…";
+    setMessage("Waiting for the strap's batch…");
+    applySummary(await api("POST", "/takes", { label: label.label, start_ms: start }));
+    setMessage(`Saved a “${label.label}” take.`);
+    $("stage").textContent = "✓";
+  } catch (e) {
+    setMessage(`Not saved: ${e.message}`, true);
+    $("stage").textContent = "✗";
+  } finally {
+    busy = false;
+    $("record").disabled = false;
+    setTimeout(() => { window_ = null; }, DISPLAY_LAG_MS + 500);
+  }
+}
+
+async function undo() {
+  if (busy) return;
+  try {
+    applySummary(await api("DELETE", "/takes/last"));
+    setMessage("Removed the last take.");
+  } catch (e) {
+    setMessage(`Undo failed: ${e.message}`, true);
+  }
+}
+
+function draw(canvas, key, range) {
+  const dpr = devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (canvas.width !== w * dpr) { canvas.width = w * dpr; canvas.height = h * dpr; }
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const end = Date.now() - DISPLAY_LAG_MS, start = end - VIEW_MS;
+  const x = (t) => ((t - start) / VIEW_MS) * w;
+  const y = (v) => h / 2 - (v / range) * (h / 2 - 4);
+  if (window_) {
+    ctx.fillStyle = "rgba(255,77,79,.14)";
+    ctx.fillRect(x(window_.start), 0, x(window_.end) - x(window_.start), h);
+  }
+  ctx.strokeStyle = "#252a31";
+  ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
+  for (let axis = 0; axis < 3; axis++) {
+    ctx.strokeStyle = COLORS[axis];
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    let first = true;
+    for (const s of samples) {
+      if (s.t < start) continue;
+      const px = x(s.t), py = y(s[key][axis]);
+      if (first) { ctx.moveTo(px, py); first = false; } else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+}
+
+function frame() {
+  const cutoff = Date.now() - VIEW_MS - DISPLAY_LAG_MS - 1000;
+  while (samples.length && samples[0].t < cutoff) samples.shift();
+  draw($("accel"), "a", 2);
+  draw($("gyro"), "g", 400);
+  requestAnimationFrame(frame);
+}
+
+function showStatus(s) {
+  const el = $("status");
+  el.dataset.state = s.state;
+  el.textContent = s.state === "streaming" ? `streaming · ${s.name}`
+    : s.state === "disconnected" ? `disconnected · ${s.reason}` : "connecting to strap…";
+}
+
+const events = new EventSource("/events");
+events.addEventListener("status", (e) => showStatus(JSON.parse(e.data)));
+events.addEventListener("batch", (e) => samples.push(...JSON.parse(e.data)));
+events.onerror = () => showStatus({ state: "disconnected", reason: "calibrator server unreachable" });
+
+document.addEventListener("keydown", (e) => {
+  if (e.code === "Space") { e.preventDefault(); record(); }
+  else if (e.code === "Backspace") { e.preventDefault(); undo(); }
+  else if (/^[1-9]$/.test(e.key) && labels[Number(e.key) - 1]) { selected = labels[Number(e.key) - 1].label; renderLabels(); }
+});
+$("record").onclick = record;
+$("undo").onclick = undo;
+
+api("GET", "/takes").then(applySummary).catch((e) => setMessage(e.message, true));
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

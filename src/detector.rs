@@ -2,7 +2,8 @@ use std::collections::VecDeque;
 
 use crate::dataset::Label;
 use crate::recognizer::{
-    EARLY_MIN_POST, PEAK_ACTIVITY, POST_SAMPLES, Recognizer, activity, features, is_peak,
+    EARLY_MIN_POST, PEAK_ACTIVITY, POST_SAMPLES, RISING_WINDOW, Recognizer, activity, features,
+    is_peak, is_rising_tail, tail_features,
 };
 use crate::timeline::TimedSample;
 
@@ -13,6 +14,7 @@ const HISTORY: usize = 400;
 pub enum Evidence {
     FullWindow,
     Prefix { samples_past_peak: usize },
+    RisingEdge,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,27 +79,39 @@ impl Detector {
             let Some(label) = label.filter(|&l| l != Label::Idle) else {
                 continue;
             };
-            let batches_waited = self
-                .batch_starts
-                .iter()
-                .rev()
-                .take_while(|&&start| start > sequence)
-                .count();
-            let batch_start = self
-                .batch_starts
-                .iter()
-                .rev()
-                .nth(batches_waited)
-                .copied()
-                .unwrap_or(oldest);
             self.quiet_until = sequence + COOLDOWN_SAMPLES;
-            detections.push(Detection {
+            detections.push(make_detection(
+                &self.batch_starts,
                 label,
                 evidence,
-                t: sample.t,
-                index_in_batch: sequence - batch_start,
-                batches_waited,
-            });
+                sequence,
+                sample.t,
+                oldest,
+            ));
+        }
+        if let Some((tail_index, tail_t)) = samples.len().checked_sub(1).and_then(|i| {
+            let sample = samples.get(i)?;
+            (samples.len() >= RISING_WINDOW).then_some((i, sample.t))
+        }) {
+            let tail_sequence = oldest + count(tail_index);
+            if tail_sequence >= self.quiet_until && is_rising_tail(&magnitudes, tail_index) {
+                let tail = tail_features(samples, tail_index);
+                if let Some(label) = self
+                    .recognizer
+                    .classify_rising(&tail)
+                    .filter(|&l| l != Label::Idle)
+                {
+                    self.quiet_until = tail_sequence + COOLDOWN_SAMPLES;
+                    detections.push(make_detection(
+                        &self.batch_starts,
+                        label,
+                        Evidence::RisingEdge,
+                        tail_sequence,
+                        tail_t,
+                        oldest,
+                    ));
+                }
+            }
         }
         self.scanned = self.scanned.max(oldest + count(ready));
         let excess = self.buffer.len().saturating_sub(HISTORY);
@@ -107,6 +121,34 @@ impl Detector {
             self.batch_starts.pop_front();
         }
         detections
+    }
+}
+
+fn make_detection(
+    batch_starts: &VecDeque<u64>,
+    label: Label,
+    evidence: Evidence,
+    sequence: u64,
+    t: u64,
+    oldest: u64,
+) -> Detection {
+    let batches_waited = batch_starts
+        .iter()
+        .rev()
+        .take_while(|&&start| start > sequence)
+        .count();
+    let batch_start = batch_starts
+        .iter()
+        .rev()
+        .nth(batches_waited)
+        .copied()
+        .unwrap_or(oldest);
+    Detection {
+        label,
+        evidence,
+        t,
+        index_in_batch: sequence - batch_start,
+        batches_waited,
     }
 }
 
@@ -158,15 +200,15 @@ mod tests {
     }
 
     #[test]
-    fn a_swing_split_across_batches_fires_once() {
+    fn a_swing_split_across_batches_fires_on_the_rising_edge_and_only_once() {
         let samples = stream(&[(30, swing(Label::Left, 1, 1.0))]);
         assert_eq!(
             detect(&samples),
             vec![Detection {
                 label: Label::Left,
-                evidence: Evidence::FullWindow,
-                t: 1_050,
-                index_in_batch: 5,
+                evidence: Evidence::RisingEdge,
+                t: 990,
+                index_in_batch: 99,
                 batches_waited: 0,
             }]
         );
@@ -184,6 +226,23 @@ mod tests {
                 },
                 t: 1_900,
                 index_in_batch: 90,
+                batches_waited: 0,
+            }]
+        );
+    }
+
+    #[test]
+    fn a_confident_peak_one_sample_before_the_batch_end_fires_early() {
+        let samples = stream(&[(123, swing(Label::Left, 1, 1.0))]);
+        assert_eq!(
+            detect(&samples),
+            vec![Detection {
+                label: Label::Left,
+                evidence: Evidence::Prefix {
+                    samples_past_peak: 1
+                },
+                t: 1_980,
+                index_in_batch: 98,
                 batches_waited: 0,
             }]
         );

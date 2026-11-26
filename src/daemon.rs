@@ -83,6 +83,7 @@ fn fire(detection: Detection, arrived_ms: u64, scan: Duration, niri: &Niri) {
         Evidence::Prefix { samples_past_peak } => {
             format!("early on {samples_past_peak} of {POST_SAMPLES} samples past the peak")
         }
+        Evidence::RisingEdge => "early on the rising edge before the peak".to_owned(),
     };
     log(&format!(
         "{:?} -> {shown}, {evidence}: its batch arrived {} ms after the peak, which was sample {} of its batch; {} later batches waited for; detector took {} us",

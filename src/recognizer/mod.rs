@@ -63,8 +63,8 @@ pub fn segments(take: &Take) -> Vec<Vec<f32>> {
         Label::Twist
         | Label::Left
         | Label::Right
-        | Label::WorkspaceUp
-        | Label::WorkspaceDown
+        | Label::Up
+        | Label::Down
         | Label::ReverseTwist
         | Label::Knock => magnitudes
             .iter()

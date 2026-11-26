@@ -15,8 +15,8 @@ pub enum Label {
     Twist,
     Left,
     Right,
-    WorkspaceUp,
-    WorkspaceDown,
+    Up,
+    Down,
     ReverseTwist,
     Knock,
 }
@@ -27,8 +27,8 @@ impl Label {
         Self::Twist,
         Self::Left,
         Self::Right,
-        Self::WorkspaceUp,
-        Self::WorkspaceDown,
+        Self::Up,
+        Self::Down,
         Self::ReverseTwist,
         Self::Knock,
     ];
@@ -40,8 +40,8 @@ impl Label {
             Self::Twist => "twist",
             Self::Left => "left",
             Self::Right => "right",
-            Self::WorkspaceUp => "workspace_up",
-            Self::WorkspaceDown => "workspace_down",
+            Self::Up => "up",
+            Self::Down => "down",
             Self::ReverseTwist => "reverse_twist",
             Self::Knock => "knock",
         }
@@ -54,8 +54,8 @@ impl Label {
             Self::Twist
             | Self::Left
             | Self::Right
-            | Self::WorkspaceUp
-            | Self::WorkspaceDown
+            | Self::Up
+            | Self::Down
             | Self::ReverseTwist
             | Self::Knock => 1_500,
         }

@@ -98,6 +98,16 @@ struct Tally {
 }
 
 impl Tally {
+    fn absorb(&mut self, other: &Self) {
+        self.replays += other.replays;
+        self.recognised += other.recognised;
+        self.wrong += other.wrong;
+        self.missed += other.missed;
+        self.extra += other.extra;
+        self.latencies_ms.extend(&other.latencies_ms);
+        self.logging_errors_ms.extend(&other.logging_errors_ms);
+    }
+
     fn record(&mut self, expected: Label, fires: &[Fire]) {
         self.replays += 1;
         self.extra += fires.len().saturating_sub(1);
@@ -121,6 +131,11 @@ fn percentile(values: &[i64], percent: usize) -> Option<i64> {
     sorted
         .get((sorted.len().saturating_sub(1) * percent).div_ceil(100))
         .copied()
+}
+
+fn mean(values: &[i64]) -> Option<i64> {
+    let n = i64::try_from(values.len()).ok().filter(|&n| n > 0)?;
+    Some(values.iter().sum::<i64>() / n)
 }
 
 pub struct IdleReplay {
@@ -171,6 +186,25 @@ fn cell(value: Option<i64>) -> String {
     value.map_or_else(|| "-".into(), |v| v.to_string())
 }
 
+fn row(f: &mut fmt::Formatter<'_>, name: &str, tally: &Tally) -> fmt::Result {
+    writeln!(
+        f,
+        "{:>14}{:>9}{:>12}{:>7}{:>8}{:>7}{:>13}{:>13}{:>14}{:>17}{:>17}{:>17}",
+        name,
+        tally.replays,
+        tally.recognised,
+        tally.wrong,
+        tally.missed,
+        tally.extra,
+        cell(percentile(&tally.latencies_ms, 50)),
+        cell(percentile(&tally.latencies_ms, 95)),
+        cell(mean(&tally.latencies_ms)),
+        cell(percentile(&tally.logging_errors_ms, 0)),
+        cell(percentile(&tally.logging_errors_ms, 50)),
+        cell(percentile(&tally.logging_errors_ms, 100)),
+    )
+}
+
 impl fmt::Display for Benchmark {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
@@ -185,7 +219,7 @@ impl fmt::Display for Benchmark {
         )?;
         writeln!(
             f,
-            "{:>14}{:>9}{:>12}{:>7}{:>8}{:>7}{:>13}{:>13}{:>17}{:>17}{:>17}",
+            "{:>14}{:>9}{:>12}{:>7}{:>8}{:>7}{:>13}{:>13}{:>14}{:>17}{:>17}{:>17}",
             "take",
             "replays",
             "recognised",
@@ -194,27 +228,19 @@ impl fmt::Display for Benchmark {
             "extra",
             "latency p50",
             "latency p95",
+            "latency mean",
             "logged-true min",
             "logged-true p50",
             "logged-true max"
         )?;
+        let mut all_gestures = Tally::default();
         for (label, tally) in &self.gestures {
-            writeln!(
-                f,
-                "{:>14}{:>9}{:>12}{:>7}{:>8}{:>7}{:>13}{:>13}{:>17}{:>17}{:>17}",
-                label.name(),
-                tally.replays,
-                tally.recognised,
-                tally.wrong,
-                tally.missed,
-                tally.extra,
-                cell(percentile(&tally.latencies_ms, 50)),
-                cell(percentile(&tally.latencies_ms, 95)),
-                cell(percentile(&tally.logging_errors_ms, 0)),
-                cell(percentile(&tally.logging_errors_ms, 50)),
-                cell(percentile(&tally.logging_errors_ms, 100)),
-            )?;
+            row(f, label.name(), tally)?;
+            if *label != Label::Idle {
+                all_gestures.absorb(tally);
+            }
         }
+        row(f, "all gestures", &all_gestures)?;
         for idle in &self.long_idle {
             let total: usize = idle.fired.values().sum();
             let detail: Vec<String> = idle

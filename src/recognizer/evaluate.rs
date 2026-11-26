@@ -51,15 +51,15 @@ pub fn leave_one_take_out(takes: &[Take]) -> Confusion {
 
 impl fmt::Display for Confusion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:>10}", "actual")?;
+        write!(f, "{:>15}", "actual")?;
         for predicted in Label::ALL {
-            write!(f, "{:>10}", format!("{predicted:?}").to_lowercase())?;
+            write!(f, "{:>15}", predicted.name())?;
         }
         writeln!(f)?;
         for actual in Label::ALL {
-            write!(f, "{:>10}", format!("{actual:?}").to_lowercase())?;
+            write!(f, "{:>15}", actual.name())?;
             for predicted in Label::ALL {
-                write!(f, "{:>10}", self.count(actual, predicted))?;
+                write!(f, "{:>15}", self.count(actual, predicted))?;
             }
             writeln!(f)?;
         }

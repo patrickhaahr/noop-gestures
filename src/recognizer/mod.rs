@@ -55,7 +55,11 @@ pub fn segments(take: &Take) -> Vec<Vec<f32>> {
         Label::Idle => (0..samples.len())
             .filter(|&i| is_peak(&magnitudes, i, IDLE_PEAK_DPS))
             .collect(),
-        Label::Overview | Label::Left | Label::Right => magnitudes
+        Label::Overview
+        | Label::Left
+        | Label::Right
+        | Label::WorkspaceUp
+        | Label::WorkspaceDown => magnitudes
             .iter()
             .enumerate()
             .max_by(|a, b| a.1.total_cmp(b.1))

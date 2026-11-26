@@ -16,4 +16,4 @@
 - Only one process may hold the strap: stop the calibrator before `just dev run`, or the daemon connects but receives no IMU data.
 - `just dev evaluate` holds out one take at a time and prints the confusion matrix; run it after recording takes, before trusting `run`.
 - The recognizer is 1-nearest-neighbour over 1.2 s windows (gyro/200 dps and raw accel) centred on gyro-magnitude peaks; idle takes become negative templates at every peak above 60 dps. A distance-margin reject rule and DTW were tried offline and lost accuracy.
-- `just dev run` maps overview, left and right to `niri msg action toggle-overview`, `focus-column-left` and `focus-column-right`, with a 1 s cooldown so a return swing does not fire the opposite gesture. Latency is 0.5 to 1 s, because the strap sends one batch per second.
+- `just dev run` maps overview, left, right, workspace up and workspace down to `niri msg action toggle-overview`, `focus-column-left`, `focus-column-right`, `focus-workspace-up` and `focus-workspace-down`, with a 1 s cooldown so a return swing does not fire the opposite gesture. Latency is 0.5 to 1 s, because the strap sends one batch per second.

@@ -27,7 +27,7 @@
   .label { text-align: left; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 12px; cursor: pointer; font: inherit; }
   .label[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
   .label .key { color: var(--muted); font-size: 12px; float: right; }
-  .label .name { font-size: 16px; font-weight: 600; text-transform: capitalize; }
+  .label .name { font-size: 16px; font-weight: 600; }
   .label .meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
   .label .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
   .controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
@@ -72,9 +72,11 @@
 <script>
 const HINTS = {
   idle: "Type, rest, reach for the mouse. Everything that must not trigger.",
-  overview: "The gesture that opens and closes the overview.",
+  overview: "Twist the wrist palm-up and back, like turning a doorknob.",
   left: "Swipe to the column on the left.",
   right: "Swipe to the column on the right.",
+  workspace_up: "Focus the workspace above.",
+  workspace_down: "Focus the workspace below; the mirror of workspace up.",
 };
 const VIEW_MS = 6000;
 const DISPLAY_LAG_MS = 1300;
@@ -98,7 +100,7 @@ function renderLabels() {
     b.className = "label";
     b.setAttribute("aria-pressed", String(l.label === selected));
     b.innerHTML = `<span class="key">${i + 1}</span><div class="name"></div><div class="meta"></div><div class="hint"></div>`;
-    b.querySelector(".name").textContent = l.label;
+    b.querySelector(".name").textContent = l.label.replace("_", " ");
     b.querySelector(".meta").textContent = `${l.takes} takes · ${(l.window_ms / 1000).toFixed(1)} s window`;
     b.querySelector(".hint").textContent = HINTS[l.label] ?? "";
     b.onclick = () => { selected = l.label; renderLabels(); };

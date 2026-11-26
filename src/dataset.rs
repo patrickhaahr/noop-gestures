@@ -14,16 +14,39 @@ pub enum Label {
     Overview,
     Left,
     Right,
+    WorkspaceUp,
+    WorkspaceDown,
 }
 
 impl Label {
-    pub const ALL: [Self; 4] = [Self::Idle, Self::Overview, Self::Left, Self::Right];
+    pub const ALL: [Self; 6] = [
+        Self::Idle,
+        Self::Overview,
+        Self::Left,
+        Self::Right,
+        Self::WorkspaceUp,
+        Self::WorkspaceDown,
+    ];
+
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Idle => "idle",
+            Self::Overview => "overview",
+            Self::Left => "left",
+            Self::Right => "right",
+            Self::WorkspaceUp => "workspace_up",
+            Self::WorkspaceDown => "workspace_down",
+        }
+    }
 
     #[must_use]
     pub const fn window_ms(self) -> u64 {
         match self {
             Self::Idle => 6_000,
-            Self::Overview | Self::Left | Self::Right => 1_500,
+            Self::Overview | Self::Left | Self::Right | Self::WorkspaceUp | Self::WorkspaceDown => {
+                1_500
+            }
         }
     }
 }

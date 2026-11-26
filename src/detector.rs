@@ -58,11 +58,11 @@ impl Detector {
                 continue;
             }
             match self.recognizer.classify(&features(samples, i)) {
-                Some(label @ (Label::Overview | Label::Left | Label::Right)) => {
+                Some(Label::Idle) | None => {}
+                Some(label) => {
                     self.quiet_until = sample.t + COOLDOWN_MS;
                     detections.push(Detection { label, t: sample.t });
                 }
-                Some(Label::Idle) | None => {}
             }
         }
         let excess = self.buffer.len().saturating_sub(HISTORY);

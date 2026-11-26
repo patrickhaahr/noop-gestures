@@ -12,16 +12,18 @@ const fn niri_action(label: Label) -> Option<&'static str> {
         Label::Overview => Some("toggle-overview"),
         Label::Left => Some("focus-column-left"),
         Label::Right => Some("focus-column-right"),
+        Label::WorkspaceUp => Some("focus-workspace-up"),
+        Label::WorkspaceDown => Some("focus-workspace-down"),
         Label::Idle => None,
     }
 }
 
 pub async fn run(dataset: &Dataset) -> Result<()> {
     let counts = dataset.counts()?;
-    let missing: Vec<String> = counts
+    let missing: Vec<&str> = counts
         .iter()
         .filter(|&(_, &n)| n == 0)
-        .map(|(label, _)| format!("{label:?}").to_lowercase())
+        .map(|(label, _)| label.name())
         .collect();
     ensure!(
         missing.is_empty(),

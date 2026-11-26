@@ -60,7 +60,7 @@ pub fn segments(take: &Take) -> Vec<Vec<f32>> {
         Label::Idle => (0..samples.len())
             .filter(|&i| is_peak(&magnitudes, i, PEAK_ACTIVITY))
             .collect(),
-        Label::Overview
+        Label::Twist
         | Label::Left
         | Label::Right
         | Label::WorkspaceUp

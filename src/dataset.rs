@@ -12,7 +12,7 @@ use crate::timeline::TimedSample;
 #[serde(rename_all = "snake_case")]
 pub enum Label {
     Idle,
-    Overview,
+    Twist,
     Left,
     Right,
     WorkspaceUp,
@@ -24,7 +24,7 @@ pub enum Label {
 impl Label {
     pub const ALL: [Self; 8] = [
         Self::Idle,
-        Self::Overview,
+        Self::Twist,
         Self::Left,
         Self::Right,
         Self::WorkspaceUp,
@@ -37,7 +37,7 @@ impl Label {
     pub const fn name(self) -> &'static str {
         match self {
             Self::Idle => "idle",
-            Self::Overview => "overview",
+            Self::Twist => "twist",
             Self::Left => "left",
             Self::Right => "right",
             Self::WorkspaceUp => "workspace_up",
@@ -51,7 +51,7 @@ impl Label {
     pub const fn window_ms(self) -> u64 {
         match self {
             Self::Idle => 6_000,
-            Self::Overview
+            Self::Twist
             | Self::Left
             | Self::Right
             | Self::WorkspaceUp
@@ -180,11 +180,11 @@ mod tests {
     fn remove_last_drops_only_the_newest_take() -> io::Result<()> {
         let dataset = scratch("remove-last");
         dataset.append(&take(Label::Left))?;
-        dataset.append(&take(Label::Overview))?;
+        dataset.append(&take(Label::Twist))?;
         let removed = dataset.remove_last()?.map(|t| t.label);
         assert_eq!(
             (removed, dataset.takes()?),
-            (Some(Label::Overview), vec![take(Label::Left)])
+            (Some(Label::Twist), vec![take(Label::Left)])
         );
         Ok(())
     }

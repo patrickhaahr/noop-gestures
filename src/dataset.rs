@@ -19,11 +19,10 @@ pub enum Label {
     WorkspaceDown,
     ReverseTwist,
     Knock,
-    Fist,
 }
 
 impl Label {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 8] = [
         Self::Idle,
         Self::Overview,
         Self::Left,
@@ -32,7 +31,6 @@ impl Label {
         Self::WorkspaceDown,
         Self::ReverseTwist,
         Self::Knock,
-        Self::Fist,
     ];
 
     #[must_use]
@@ -46,7 +44,6 @@ impl Label {
             Self::WorkspaceDown => "workspace_down",
             Self::ReverseTwist => "reverse_twist",
             Self::Knock => "knock",
-            Self::Fist => "fist",
         }
     }
 
@@ -60,8 +57,7 @@ impl Label {
             | Self::WorkspaceUp
             | Self::WorkspaceDown
             | Self::ReverseTwist
-            | Self::Knock
-            | Self::Fist => 1_500,
+            | Self::Knock => 1_500,
         }
     }
 }

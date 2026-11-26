@@ -73,7 +73,6 @@ pub fn segments(take: &Take) -> Vec<Vec<f32>> {
             .map(|(i, _)| i)
             .into_iter()
             .collect(),
-        Label::Fist => Vec::new(),
     };
     centres.into_iter().map(|c| features(&samples, c)).collect()
 }

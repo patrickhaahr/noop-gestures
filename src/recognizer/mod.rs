@@ -5,12 +5,17 @@ use crate::timeline::TimedSample;
 
 pub const HALF_WINDOW: usize = 60;
 pub const PEAK_RADIUS: usize = 60;
-pub const IDLE_PEAK_DPS: f32 = 60.0;
+pub const PEAK_ACTIVITY: f32 = 60.0;
 const GYRO_SCALE_DPS: f32 = 200.0;
+const DPS_PER_G_OF_JOLT: f32 = 50.0;
+
+fn norm(v: [f32; 3]) -> f32 {
+    v.iter().map(|x| x * x).sum::<f32>().sqrt()
+}
 
 #[must_use]
-pub fn gyro_magnitude(sample: &TimedSample) -> f32 {
-    sample.g.iter().map(|v| v * v).sum::<f32>().sqrt()
+pub fn activity(sample: &TimedSample) -> f32 {
+    DPS_PER_G_OF_JOLT.mul_add((norm(sample.a) - 1.0).abs(), norm(sample.g))
 }
 
 #[must_use]
@@ -50,16 +55,18 @@ fn monotonic(samples: &[TimedSample]) -> Vec<TimedSample> {
 #[must_use]
 pub fn segments(take: &Take) -> Vec<Vec<f32>> {
     let samples = monotonic(&take.samples);
-    let magnitudes: Vec<f32> = samples.iter().map(gyro_magnitude).collect();
+    let magnitudes: Vec<f32> = samples.iter().map(activity).collect();
     let centres: Vec<usize> = match take.label {
         Label::Idle => (0..samples.len())
-            .filter(|&i| is_peak(&magnitudes, i, IDLE_PEAK_DPS))
+            .filter(|&i| is_peak(&magnitudes, i, PEAK_ACTIVITY))
             .collect(),
         Label::Overview
         | Label::Left
         | Label::Right
         | Label::WorkspaceUp
-        | Label::WorkspaceDown => magnitudes
+        | Label::WorkspaceDown
+        | Label::ReverseTwist
+        | Label::Knock => magnitudes
             .iter()
             .enumerate()
             .max_by(|a, b| a.1.total_cmp(b.1))
@@ -141,6 +148,21 @@ pub mod tests {
             .collect();
         Take {
             label,
+            start_ms: 0,
+            samples,
+        }
+    }
+
+    pub fn knock() -> Take {
+        let samples = (0..150u16)
+            .map(|i| TimedSample {
+                t: u64::from(i) * 10,
+                a: [0.0, 0.0, if i == 75 { 3.0 } else { 1.0 }],
+                g: [0.0; 3],
+            })
+            .collect();
+        Take {
+            label: Label::Knock,
             start_ms: 0,
             samples,
         }

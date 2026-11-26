@@ -16,16 +16,20 @@ pub enum Label {
     Right,
     WorkspaceUp,
     WorkspaceDown,
+    ReverseTwist,
+    Knock,
 }
 
 impl Label {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 8] = [
         Self::Idle,
         Self::Overview,
         Self::Left,
         Self::Right,
         Self::WorkspaceUp,
         Self::WorkspaceDown,
+        Self::ReverseTwist,
+        Self::Knock,
     ];
 
     #[must_use]
@@ -37,6 +41,8 @@ impl Label {
             Self::Right => "right",
             Self::WorkspaceUp => "workspace_up",
             Self::WorkspaceDown => "workspace_down",
+            Self::ReverseTwist => "reverse_twist",
+            Self::Knock => "knock",
         }
     }
 
@@ -44,9 +50,13 @@ impl Label {
     pub const fn window_ms(self) -> u64 {
         match self {
             Self::Idle => 6_000,
-            Self::Overview | Self::Left | Self::Right | Self::WorkspaceUp | Self::WorkspaceDown => {
-                1_500
-            }
+            Self::Overview
+            | Self::Left
+            | Self::Right
+            | Self::WorkspaceUp
+            | Self::WorkspaceDown
+            | Self::ReverseTwist
+            | Self::Knock => 1_500,
         }
     }
 }

@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use crate::dataset::Label;
 use crate::recognizer::{
-    HALF_WINDOW, IDLE_PEAK_DPS, PEAK_RADIUS, Recognizer, features, gyro_magnitude, is_peak,
+    HALF_WINDOW, PEAK_ACTIVITY, PEAK_RADIUS, Recognizer, activity, features, is_peak,
 };
 use crate::timeline::TimedSample;
 
@@ -46,7 +46,7 @@ impl Detector {
         }
         self.buffer.extend(stamped);
         let samples = self.buffer.make_contiguous();
-        let magnitudes: Vec<f32> = samples.iter().map(gyro_magnitude).collect();
+        let magnitudes: Vec<f32> = samples.iter().map(activity).collect();
         let ready = samples.len().saturating_sub(LOOKAHEAD);
         let mut detections = Vec::new();
         for (i, sample) in samples.iter().enumerate().take(ready) {
@@ -54,7 +54,7 @@ impl Detector {
                 continue;
             }
             self.scanned_through = Some(sample.t);
-            if sample.t < self.quiet_until || !is_peak(&magnitudes, i, IDLE_PEAK_DPS) {
+            if sample.t < self.quiet_until || !is_peak(&magnitudes, i, PEAK_ACTIVITY) {
                 continue;
             }
             match self.recognizer.classify(&features(samples, i)) {
@@ -75,27 +75,33 @@ impl Detector {
 mod tests {
     use super::*;
     use crate::dataset::Take;
-    use crate::recognizer::tests::{sample, swing};
+    use crate::recognizer::tests::{knock, sample, swing};
 
     fn detector() -> Detector {
         Detector::new(Recognizer::train(&[
             swing(Label::Left, 1, 1.0),
             swing(Label::Right, 1, -1.0),
+            knock(),
         ]))
     }
 
     fn stream(gestures: &[(u64, Take)]) -> Vec<TimedSample> {
         (0..600u64)
             .map(|i| {
-                let g = gestures
+                let overlapping: Vec<&TimedSample> = gestures
                     .iter()
                     .filter_map(|(at, take)| {
                         take.samples.get(usize::try_from(i.checked_sub(*at)?).ok()?)
                     })
-                    .fold([0.0; 3], |acc, s| {
-                        [acc[0] + s.g[0], acc[1] + s.g[1], acc[2] + s.g[2]]
-                    });
-                sample(i * 10, g)
+                    .collect();
+                let g = overlapping.iter().fold([0.0; 3], |acc, s| {
+                    [acc[0] + s.g[0], acc[1] + s.g[1], acc[2] + s.g[2]]
+                });
+                let jolt: f32 = overlapping.iter().map(|s| s.a[2] - 1.0).sum();
+                TimedSample {
+                    a: [0.0, 0.0, 1.0 + jolt],
+                    ..sample(i * 10, g)
+                }
             })
             .collect()
     }
@@ -118,6 +124,13 @@ mod tests {
                 t: 1_050
             }]
         );
+    }
+
+    #[test]
+    fn a_knock_without_rotation_fires() {
+        let samples = stream(&[(100, knock())]);
+        let labels: Vec<Label> = detect(&samples).iter().map(|d| d.label).collect();
+        assert_eq!(labels, vec![Label::Knock]);
     }
 
     #[test]

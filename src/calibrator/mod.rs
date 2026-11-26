@@ -1,10 +1,9 @@
 mod guard;
-mod session;
 
 use std::convert::Infallible;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use anyhow::Result;
 use axum::extract::State;
@@ -18,8 +17,8 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, watch};
 
 use crate::dataset::{Dataset, Label, Take};
+use crate::session::{self, StrapStatus};
 use crate::timeline::{SAMPLE_PERIOD_MS, TimedSample, Timeline};
-pub use session::StrapStatus;
 
 const PAGE: &str = include_str!("page.html");
 const COVER_TIMEOUT: Duration = Duration::from_secs(4);
@@ -35,13 +34,8 @@ struct AppState {
     timeline: Mutex<Timeline>,
     updates: broadcast::Sender<Update>,
     status: watch::Receiver<StrapStatus>,
+    shutdown: watch::Receiver<bool>,
     dataset: Dataset,
-}
-
-pub fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
 pub async fn run(port: u16, dataset: Dataset) -> Result<()> {
@@ -52,10 +46,28 @@ pub async fn run(port: u16, dataset: Dataset) -> Result<()> {
         timeline: Mutex::new(Timeline::default()),
         updates: updates.clone(),
         status,
+        shutdown: shutdown.clone(),
         dataset,
     });
 
-    let session = tokio::spawn(session::run(Arc::clone(&state), status_tx, shutdown));
+    let session_state = Arc::clone(&state);
+    let emit = move |event| match event {
+        session::Event::Status(next) => {
+            session_state
+                .updates
+                .send(Update::Status(next.clone()))
+                .ok();
+            status_tx.send_replace(next);
+        }
+        session::Event::Batch {
+            samples,
+            arrived_ms,
+        } => {
+            let stamped = lock(&session_state.timeline).push(&samples, arrived_ms);
+            session_state.updates.send(Update::Batch(stamped)).ok();
+        }
+    };
+    let session = tokio::spawn(session::run(emit, shutdown));
 
     let app = Router::new()
         .route("/", get(|| async { Html(PAGE) }))
@@ -66,23 +78,18 @@ pub async fn run(port: u16, dataset: Dataset) -> Result<()> {
         .with_state(Arc::clone(&state));
     let listener =
         tokio::net::TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, port))).await?;
-    eprintln_ok(&format!(
+    session::log(&format!(
         "calibrator on http://127.0.0.1:{port}  dataset {}",
         state.dataset.path().display()
     ));
     axum::serve(listener, app)
-        .with_graceful_shutdown(async {
-            tokio::signal::ctrl_c().await.ok();
+        .with_graceful_shutdown(async move {
+            session::shutdown_signal().await;
+            shutdown_tx.send(true).ok();
         })
         .await?;
-    shutdown_tx.send(true).ok();
-    session.await??;
+    session.await?;
     Ok(())
-}
-
-fn eprintln_ok(line: &str) {
-    use std::io::Write as _;
-    writeln!(std::io::stderr(), "{line}").ok();
 }
 
 async fn events(
@@ -99,8 +106,12 @@ async fn events(
             }
         }
     });
+    let mut shutdown = state.shutdown.clone();
     let stream = futures::stream::once(async { current })
         .chain(live)
+        .take_until(async move {
+            shutdown.wait_for(|stop| *stop).await.ok();
+        })
         .map(|update| Ok(to_event(&update)));
     Sse::new(stream).keep_alive(KeepAlive::default())
 }

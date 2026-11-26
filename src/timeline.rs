@@ -39,6 +39,9 @@ impl Timeline {
             })
             .collect();
         self.next_ms = Some(start + span_ms);
+        while self.samples.back().is_some_and(|s| s.t >= start) {
+            self.samples.pop_back();
+        }
         self.samples.extend(&stamped);
         let horizon = (start + span_ms).saturating_sub(RETAIN_MS);
         while self.samples.front().is_some_and(|s| s.t < horizon) {
@@ -84,6 +87,15 @@ mod tests {
         timeline.push(&batch(), 10_000);
         let after_gap = timeline.push(&batch(), 20_000);
         assert_eq!(after_gap.first().map(|s| s.t), Some(19_000));
+    }
+
+    #[test]
+    fn early_arrival_resync_never_repeats_timestamps() {
+        let mut timeline = Timeline::default();
+        timeline.push(&batch(), 10_000);
+        timeline.push(&batch(), 10_500);
+        let times: Vec<u64> = timeline.window(0, 20_000).iter().map(|s| s.t).collect();
+        assert!(times.windows(2).all(|w| w.first() < w.last()));
     }
 
     #[test]

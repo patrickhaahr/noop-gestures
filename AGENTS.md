@@ -11,3 +11,9 @@
 - `just dev calibrate` serves the calibrator on http://127.0.0.1:7878 and appends labelled takes to `$XDG_DATA_HOME/noop-gestures/takes.jsonl`; it only answers loopback Host headers and same-origin writes.
 - `just dev probe [seconds] [--imu-stream]` runs the live IMU probe: command 63 enables type-43 frames, 1928-byte ones carry 100 accel + 100 gyro samples, delivered about once per second.
 - The u32 at frame offset 15 of type-43 frames is not Unix time on firmware seen so far; use arrival time.
+
+## Recognizer and daemon
+- Only one process may hold the strap: stop the calibrator before `just dev run`, or the daemon connects but receives no IMU data.
+- `just dev evaluate` holds out one take at a time and prints the confusion matrix; run it after recording takes, before trusting `run`.
+- The recognizer is 1-nearest-neighbour over 1.2 s windows (gyro/200 dps and raw accel) centred on gyro-magnitude peaks; idle takes become negative templates at every peak above 60 dps. A distance-margin reject rule and DTW were tried offline and lost accuracy.
+- `just dev run` maps overview, left and right to `niri msg action toggle-overview`, `focus-column-left` and `focus-column-right`, with a 1 s cooldown so a return swing does not fire the opposite gesture. Latency is 0.5 to 1 s, because the strap sends one batch per second.

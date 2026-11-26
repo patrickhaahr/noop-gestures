@@ -1,11 +1,16 @@
 mod calibrator;
+mod daemon;
 mod dataset;
+mod detector;
 mod frame;
 mod imu;
 mod probe;
+mod recognizer;
+mod session;
 mod strap;
 mod timeline;
 
+use std::io::Write as _;
 use std::path::PathBuf;
 
 use anyhow::{Context as _, Result};
@@ -36,6 +41,16 @@ enum Cmd {
         #[arg(long, help = "JSONL file the takes are appended to")]
         dataset: Option<PathBuf>,
     },
+    #[command(about = "Recognize gestures from the live strap and drive niri")]
+    Run {
+        #[arg(long, help = "JSONL file of recorded takes")]
+        dataset: Option<PathBuf>,
+    },
+    #[command(about = "Score the recognizer on the recorded takes, holding out one take at a time")]
+    Evaluate {
+        #[arg(long, help = "JSONL file of recorded takes")]
+        dataset: Option<PathBuf>,
+    },
 }
 
 fn default_dataset() -> Result<PathBuf> {
@@ -56,6 +71,17 @@ async fn main() -> Result<()> {
         Cmd::Calibrate { port, dataset } => {
             let path = dataset.map_or_else(default_dataset, Ok)?;
             calibrator::run(port, Dataset::new(path)).await
+        }
+        Cmd::Run { dataset } => {
+            let path = dataset.map_or_else(default_dataset, Ok)?;
+            daemon::run(&Dataset::new(path)).await
+        }
+        Cmd::Evaluate { dataset } => {
+            let path = dataset.map_or_else(default_dataset, Ok)?;
+            let takes = Dataset::new(path).takes()?;
+            let confusion = recognizer::evaluate::leave_one_take_out(&takes);
+            writeln!(std::io::stdout(), "{confusion}")?;
+            Ok(())
         }
     }
 }

@@ -3,7 +3,8 @@ use std::time::Duration;
 
 use anyhow::{Context as _, Result, bail};
 use btleplug::api::{
-    Central as _, Characteristic, Manager as _, Peripheral as _, ScanFilter, WriteType,
+    Central as _, Characteristic, Manager as _, Peripheral as _, ScanFilter, ValueNotification,
+    WriteType,
 };
 use btleplug::platform::{Manager, Peripheral};
 use futures::{Stream, StreamExt as _};
@@ -99,8 +100,17 @@ impl Strap {
         Ok(())
     }
 
+    #[must_use]
+    pub fn mtu(&self) -> u16 {
+        self.peripheral.mtu()
+    }
+
+    pub async fn fragments(&self) -> Result<impl Stream<Item = ValueNotification> + use<>> {
+        Ok(self.peripheral.notifications().await?)
+    }
+
     pub async fn frames(&self) -> Result<impl Stream<Item = Frame> + use<>> {
-        let notifications = self.peripheral.notifications().await?;
+        let notifications = self.fragments().await?;
         let mut reassemblers: HashMap<Uuid, Reassembler> = HashMap::new();
         Ok(notifications.flat_map(move |n| {
             let frames = reassemblers.entry(n.uuid).or_default().feed(&n.value);

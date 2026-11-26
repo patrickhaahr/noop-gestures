@@ -36,6 +36,11 @@ enum Cmd {
         seconds: u64,
         #[arg(long, help = "Also send SET_IMU_DATA_STREAM (command 106)")]
         imu_stream: bool,
+        #[arg(
+            long,
+            help = "Also send the read-only gets 107, 130, 65 and the feature-flag name walk 117/118"
+        )]
+        queries: bool,
     },
     #[command(about = "Serve the gesture calibrator on 127.0.0.1 and record labelled takes")]
     Calibrate {
@@ -84,7 +89,8 @@ async fn main() -> Result<()> {
         Cmd::Probe {
             seconds,
             imu_stream,
-        } => probe::run(seconds, imu_stream).await,
+            queries,
+        } => probe::run(seconds, imu_stream, queries).await,
         Cmd::Calibrate { port, dataset } => {
             let path = dataset.map_or_else(default_dataset, Ok)?;
             calibrator::run(port, Dataset::new(path)).await

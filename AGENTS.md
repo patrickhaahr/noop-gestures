@@ -9,7 +9,11 @@
 - The phone's Bluetooth must be off: the strap serves one central at a time.
 - Bond the strap the way it asks, not with `bluetoothctl pair`. A manual pair leaves command writes unanswered, and BlueZ then rejects every later write with `InProgress`. Instead: `bluetoothctl remove <mac>`, then in `bluetoothctl` run `agent NoInputNoOutput`, `default-agent`, `connect <mac>`, subscribe to `61080003`/`4`/`5` with `gatt.notify on`, and answer `yes` to the strap's "Accept pairing" request.
 - `just dev calibrate` serves the calibrator on http://127.0.0.1:7878 and appends labelled takes to `$XDG_DATA_HOME/noop-gestures/takes.jsonl`; it only answers loopback Host headers and same-origin writes.
-- `just dev probe [seconds] [--imu-stream]` runs the live IMU probe: command 63 enables type-43 frames, 1928-byte ones carry 100 accel + 100 gyro samples, delivered about once per second.
+- `just dev probe [seconds] [--imu-stream] [--queries]` runs the live IMU probe: command 63 enables type-43 frames, 1928-byte ones carry 100 accel + 100 gyro samples, delivered about once per second. It prints the ATT MTU, each batch's fragment count and first-to-last fragment time, and every other frame as hex. `--queries` also sends the read-only gets 107, 130 and 65 and walks the feature-flag names with 117/118.
+- A command reply is `[36, seq, command, request seq, result]` then the body; result 1 is success and 2 is pending.
+- Lying unworn, the strap answers command 63 with pending and sends no type-43 frames, so stream measurements need it on a wrist.
+- BlueZ negotiates an ATT MTU of 247, so a batch is 8 notifications. btleplug cannot change the connection interval or PHY on Linux, and BlueZ only takes them from root: `/etc/bluetooth/main.conf` `[LE]` `MinConnectionInterval`/`MaxConnectionInterval`, or `btmgmt phy`.
+- No get offers a smaller batch or a faster stream on this firmware: 107 (IMU stream) and 130 (R12 realtime stream) both read 0, 65 (packet config) reads `02 00 00 00 00 00 00 00 00 01 01 01 00 00 00`, and the only feature flag is `general_ab_test`.
 - The u32 at frame offset 15 of type-43 frames is not Unix time on firmware seen so far; use arrival time.
 
 ## Recognizer and daemon

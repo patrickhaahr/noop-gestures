@@ -26,7 +26,10 @@ const fn action(label: Label) -> Option<Action> {
         Label::Right => Some(Action::Niri("FocusColumnRight")),
         Label::Up => Some(Action::Niri("FocusWorkspaceUp")),
         Label::Down => Some(Action::Niri("FocusWorkspaceDown")),
-        Label::Knock => Some(Action::Process("openhome", &["ir", "edifier", "mute"])),
+        Label::Knock => Some(Action::Process(
+            "playerctl",
+            &["-p", "spotify", "play-pause"],
+        )),
         Label::Idle => None,
     }
 }

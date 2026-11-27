@@ -1,6 +1,6 @@
 # noop-gestures
 
-Turn WHOOP 4.0 wrist motion over BLE into desktop actions for [niri](https://github.com/YaLTeR/niri) and Wayland (`ydotool`, IR commands, etc.).
+Turn WHOOP 4.0 wrist motion over BLE into desktop actions for [niri](https://github.com/YaLTeR/niri) and Wayland (`ydotool`, `playerctl`, etc.).
 
 ## Gestures
 
@@ -10,7 +10,7 @@ Turn WHOOP 4.0 wrist motion over BLE into desktop actions for [niri](https://git
 | `reverse_twist` | `niri` `ToggleOverview` |
 | `left` / `right` | `niri` `FocusColumnLeft` / `FocusColumnRight` |
 | `up` / `down` | `niri` `FocusWorkspaceUp` / `FocusWorkspaceDown` |
-| `knock` | Mute speakers (`openhome ir edifier mute`) |
+| `knock` | Play/pause Spotify (`playerctl -p spotify play-pause`) |
 
 Bindings live in [`action`](src/daemon.rs).
 

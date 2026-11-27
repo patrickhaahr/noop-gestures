@@ -5,8 +5,8 @@ const IMU_FRAME_BYTES: usize = 1928;
 const SAMPLES: usize = 100;
 const ACCEL_OFFSETS: [usize; 3] = [89, 289, 489];
 const GYRO_OFFSETS: [usize; 3] = [692, 892, 1092];
-pub const ACCEL_COUNTS_PER_G: f32 = 4096.0;
-pub const GYRO_DPS_PER_COUNT: f32 = 2000.0 / 32768.0;
+const ACCEL_COUNTS_PER_G: f32 = 4096.0;
+const GYRO_DPS_PER_COUNT: f32 = 2000.0 / 32768.0;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Sample {

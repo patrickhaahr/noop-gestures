@@ -8,7 +8,7 @@ use crate::detector::{Detection, Detector, Evidence};
 use crate::niri::Niri;
 use crate::recognizer::{POST_SAMPLES, Recognizer};
 use crate::session::{self, Event, log};
-use crate::timeline::{TimedSample, Timeline};
+use crate::timeline::Timeline;
 
 enum Action {
     Process(&'static str, &'static [&'static str]),
@@ -39,7 +39,7 @@ pub async fn run(dataset: &Dataset) -> Result<()> {
         dataset.path().display()
     );
     let mut detector = Detector::new(Recognizer::train(&dataset.takes()?));
-    let mut timeline = Timeline::<TimedSample>::default();
+    let mut timeline = Timeline::default();
     log(&format!(
         "trained on {counts:?} from {}",
         dataset.path().display()
@@ -60,7 +60,6 @@ pub async fn run(dataset: &Dataset) -> Result<()> {
                 fire(detection, arrived_ms, scan, &niri);
             }
         }
-        Event::Optical { .. } => {}
     };
     let (shutdown_tx, shutdown) = watch::channel(false);
     let session = tokio::spawn(session::run(emit, shutdown));

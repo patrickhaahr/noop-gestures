@@ -73,18 +73,15 @@ impl Confusion {
             .unwrap_or_default()
     }
 
-    #[must_use]
-    pub fn total(&self) -> usize {
+    fn total(&self) -> usize {
         self.0.values().sum()
     }
 
-    #[must_use]
-    pub fn correct(&self) -> usize {
+    fn correct(&self) -> usize {
         Label::ALL.iter().map(|&l| self.count(l, l)).sum()
     }
 
-    #[must_use]
-    pub fn false_triggers(&self) -> usize {
+    fn false_triggers(&self) -> usize {
         Label::ALL
             .iter()
             .filter(|&&l| l != Label::Idle)

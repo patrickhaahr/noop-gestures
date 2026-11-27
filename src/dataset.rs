@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::optical::OpticalSample;
 use crate::timeline::TimedSample;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -67,8 +66,6 @@ pub struct Take {
     pub label: Label,
     pub start_ms: u64,
     pub samples: Vec<TimedSample>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub optical: Vec<OpticalSample>,
 }
 
 pub struct Dataset {
@@ -151,7 +148,6 @@ mod tests {
                 a: [0.0, 0.0, 1.0],
                 g: [0.0; 3],
             }],
-            optical: Vec::new(),
         }
     }
 

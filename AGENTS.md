@@ -15,7 +15,6 @@
 - **Bonding:** always bond via strap-initiated pairing (see [`README.md`](README.md)); `bluetoothctl pair` leaves command writes unanswered and stuck in `InProgress`.
 - **Worn vs. unworn:** an unworn strap replies `pending` to command 63 and emits no type-43 frames; run live stream probes while wearing the strap.
 - **Unreliable strap clock:** the `u32` at offset 15 of type-43 frames is not Unix time on this firmware; stamp from host arrival time instead.
-- **Optical frames:** 1932-byte type-43 frames carry 100 samples starting at offset 42 (stride 4); bytes past sample 100 are not waveform, the wavelength is unknown, and the recognizer currently ignores `optical`.
 
 ## Recognizer & daemon invariants
 - **~104 Hz timeline:** the strap samples at ~104 Hz (~960 ms per 100-sample batch). `Timeline` fits the sample period to earliest arrivals so late batches shift no timestamps and drop no samples; `Detector` keys on sample count and cooldown samples, using timestamps only for reporting.

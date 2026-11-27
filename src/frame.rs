@@ -51,7 +51,7 @@ pub fn wrap(inner: &[u8]) -> Vec<u8> {
     frame
 }
 
-pub fn crc8(bytes: &[u8]) -> u8 {
+fn crc8(bytes: &[u8]) -> u8 {
     bytes.iter().fold(0u8, |crc, &byte| {
         (0..8).fold(crc ^ byte, |c, _| {
             if c & 0x80 == 0 {
@@ -81,7 +81,6 @@ impl Frame {
 #[derive(Default)]
 pub struct Reassembler {
     buffer: Vec<u8>,
-    pub rejected: u64,
 }
 
 enum Scan {
@@ -102,7 +101,6 @@ impl Reassembler {
                     self.buffer.drain(..n);
                 }
                 Scan::Reject => {
-                    self.rejected += 1;
                     self.buffer.drain(..1);
                 }
                 Scan::Complete(total) => {
@@ -184,6 +182,5 @@ mod tests {
         let mut reassembler = Reassembler::default();
         let frames = reassembler.feed(&[bad, good.clone()].concat());
         assert_eq!(frames, vec![Frame(good)]);
-        assert!(reassembler.rejected >= 1);
     }
 }

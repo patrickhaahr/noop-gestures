@@ -7,7 +7,7 @@ use crate::recognizer::{
 };
 use crate::timeline::TimedSample;
 
-pub const COOLDOWN_SAMPLES: u64 = 100;
+const COOLDOWN_SAMPLES: u64 = 100;
 const HISTORY: usize = 400;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

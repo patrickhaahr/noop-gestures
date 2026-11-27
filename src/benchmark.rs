@@ -42,7 +42,7 @@ struct Fire {
 }
 
 fn replay(recognizer: Recognizer, samples: &[TimedSample]) -> Vec<Fire> {
-    let mut timeline = Timeline::<TimedSample>::default();
+    let mut timeline = Timeline::default();
     let mut detector = Detector::new(recognizer);
     let mut sampled_us: HashMap<u64, u64> = HashMap::new();
     let mut fires = Vec::new();
@@ -138,7 +138,7 @@ fn mean(values: &[i64]) -> Option<i64> {
     Some(values.iter().sum::<i64>() / n)
 }
 
-pub struct IdleReplay {
+struct IdleReplay {
     seconds: u64,
     fired: BTreeMap<Label, usize>,
 }

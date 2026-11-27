@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::dataset::{Label, Take};
 use crate::timeline::TimedSample;
 
-pub const PRE_SAMPLES: usize = 25;
+const PRE_SAMPLES: usize = 25;
 pub const POST_SAMPLES: usize = 22;
 pub const EARLY_MIN_POST: usize = 1;
 const EARLY_DISTANCE_RATIO: f32 = 0.94;
@@ -448,7 +448,6 @@ pub mod tests {
             label,
             start_ms: 0,
             samples,
-            optical: Vec::new(),
         }
     }
 
@@ -464,7 +463,6 @@ pub mod tests {
             label: Label::Knock,
             start_ms: 0,
             samples,
-            optical: Vec::new(),
         }
     }
 

@@ -17,28 +17,6 @@ pub struct TimedSample {
     pub g: [f32; 3],
 }
 
-pub trait Stamped: Copy {
-    type Raw;
-    fn stamp(t: u64, raw: &Self::Raw) -> Self;
-    fn t(&self) -> u64;
-}
-
-impl Stamped for TimedSample {
-    type Raw = Sample;
-
-    fn stamp(t: u64, raw: &Sample) -> Self {
-        Self {
-            t,
-            a: raw.accel_g,
-            g: raw.gyro_dps,
-        }
-    }
-
-    fn t(&self) -> u64 {
-        self.t
-    }
-}
-
 #[derive(Clone, Copy)]
 struct Arrival {
     samples: i64,
@@ -96,24 +74,15 @@ impl Fit {
     }
 }
 
-pub struct Timeline<S> {
-    samples: VecDeque<S>,
+#[derive(Default)]
+pub struct Timeline {
+    samples: VecDeque<TimedSample>,
     arrivals: VecDeque<Arrival>,
     delivered: i64,
 }
 
-impl<S> Default for Timeline<S> {
-    fn default() -> Self {
-        Self {
-            samples: VecDeque::new(),
-            arrivals: VecDeque::new(),
-            delivered: 0,
-        }
-    }
-}
-
-impl<S: Stamped> Timeline<S> {
-    pub fn push(&mut self, batch: &[S::Raw], arrived_ms: u64) -> Vec<S> {
+impl Timeline {
+    pub fn push(&mut self, batch: &[Sample], arrived_ms: u64) -> Vec<TimedSample> {
         let (Ok(length), Ok(at_ms)) = (i64::try_from(batch.len()), i64::try_from(arrived_ms))
         else {
             return Vec::new();
@@ -137,18 +106,22 @@ impl<S: Stamped> Timeline<S> {
         let Some(fit) = Fit::of(&self.arrivals) else {
             return Vec::new();
         };
-        let mut after = self.samples.back().map_or(0, |s| s.t() + 1);
-        let stamped: Vec<S> = (first..)
+        let mut after = self.samples.back().map_or(0, |s| s.t + 1);
+        let stamped: Vec<TimedSample> = (first..)
             .zip(batch)
             .map(|(samples, raw)| {
                 let t = u64::try_from(fit.at_ms(samples)).unwrap_or(0).max(after);
                 after = t + 1;
-                S::stamp(t, raw)
+                TimedSample {
+                    t,
+                    a: raw.accel_g,
+                    g: raw.gyro_dps,
+                }
             })
             .collect();
         self.samples.extend(&stamped);
         let horizon = after.saturating_sub(RETAIN_MS);
-        while self.samples.front().is_some_and(|s| s.t() < horizon) {
+        while self.samples.front().is_some_and(|s| s.t < horizon) {
             self.samples.pop_front();
         }
         stamped
@@ -156,14 +129,14 @@ impl<S: Stamped> Timeline<S> {
 
     #[must_use]
     pub fn covers(&self, end_ms: u64) -> bool {
-        self.samples.back().is_some_and(|s| s.t() >= end_ms)
+        self.samples.back().is_some_and(|s| s.t >= end_ms)
     }
 
     #[must_use]
-    pub fn window(&self, start_ms: u64, end_ms: u64) -> Vec<S> {
+    pub fn window(&self, start_ms: u64, end_ms: u64) -> Vec<TimedSample> {
         self.samples
             .iter()
-            .filter(|s| (start_ms..end_ms).contains(&s.t()))
+            .filter(|s| (start_ms..end_ms).contains(&s.t))
             .copied()
             .collect()
     }
@@ -177,13 +150,13 @@ mod tests {
         vec![Sample::default(); 100]
     }
 
-    fn stamps(timeline: &Timeline<TimedSample>) -> Vec<u64> {
+    fn stamps(timeline: &Timeline) -> Vec<u64> {
         timeline.window(0, u64::MAX).iter().map(|s| s.t).collect()
     }
 
     #[test]
     fn keeps_every_sample_of_a_strap_that_outpaces_100_hz() {
-        let mut timeline = Timeline::<TimedSample>::default();
+        let mut timeline = Timeline::default();
         for batch_index in 0..30 {
             timeline.push(&batch(), 10_000 + batch_index * 960);
         }
@@ -191,7 +164,7 @@ mod tests {
     }
 
     fn worst_newest_stamp_error_ms(batch_ms: u64) -> Option<u64> {
-        let mut timeline = Timeline::<TimedSample>::default();
+        let mut timeline = Timeline::default();
         (0..90)
             .map(|batch_index| {
                 let arrived_ms = 10_000 + batch_index * batch_ms;
@@ -214,7 +187,7 @@ mod tests {
 
     #[test]
     fn a_late_batch_continues_where_the_previous_one_ended() {
-        let mut timeline = Timeline::<TimedSample>::default();
+        let mut timeline = Timeline::default();
         timeline.push(&batch(), 10_000);
         let late = timeline.push(&batch(), 11_150);
         assert_eq!(late.first().map(|s| s.t), Some(10_009));
@@ -222,7 +195,7 @@ mod tests {
 
     #[test]
     fn a_long_gap_restarts_the_clock_at_the_arrival() {
-        let mut timeline = Timeline::<TimedSample>::default();
+        let mut timeline = Timeline::default();
         timeline.push(&batch(), 10_000);
         let after_gap = timeline.push(&batch(), 20_000);
         assert_eq!(after_gap.last().map(|s| s.t), Some(20_000));
@@ -230,7 +203,7 @@ mod tests {
 
     #[test]
     fn an_early_batch_never_repeats_or_reverses_timestamps() {
-        let mut timeline = Timeline::<TimedSample>::default();
+        let mut timeline = Timeline::default();
         timeline.push(&batch(), 10_000);
         timeline.push(&batch(), 10_500);
         let times = stamps(&timeline);
@@ -242,7 +215,7 @@ mod tests {
 
     #[test]
     fn a_clock_set_back_forgets_the_samples_stamped_ahead_of_it() {
-        let mut timeline = Timeline::<TimedSample>::default();
+        let mut timeline = Timeline::default();
         timeline.push(&batch(), 100_000);
         timeline.push(&batch(), 50_000);
         assert_eq!(stamps(&timeline).last(), Some(&50_000));
@@ -250,7 +223,7 @@ mod tests {
 
     #[test]
     fn window_returns_only_samples_inside_half_open_range() {
-        let mut timeline = Timeline::<TimedSample>::default();
+        let mut timeline = Timeline::default();
         timeline.push(&batch(), 10_000);
         let times = stamps(&timeline);
         let window = timeline.window(times[10], times[20]);
@@ -262,7 +235,7 @@ mod tests {
 
     #[test]
     fn covers_is_false_until_a_batch_reaches_the_end() {
-        let mut timeline = Timeline::<TimedSample>::default();
+        let mut timeline = Timeline::default();
         timeline.push(&batch(), 10_000);
         assert_eq!(
             (timeline.covers(10_000), timeline.covers(10_001)),
@@ -272,7 +245,7 @@ mod tests {
 
     #[test]
     fn drops_samples_older_than_retention() {
-        let mut timeline = Timeline::<TimedSample>::default();
+        let mut timeline = Timeline::default();
         timeline.push(&batch(), 10_000);
         timeline.push(&batch(), 50_000);
         assert_eq!(timeline.window(0, 40_000), Vec::<TimedSample>::new());
